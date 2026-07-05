@@ -1,0 +1,43 @@
+name: Update upstream submodule
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    name: Update CometixSpace claude-code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Move submodule to latest upstream master
+        run: |
+          git submodule update --init --recursive upstream/CometixSpace-claude-code
+          git -C upstream/CometixSpace-claude-code fetch origin master --tags
+          git -C upstream/CometixSpace-claude-code checkout -B master origin/master
+
+      - name: Commit changed submodule pointer
+        run: |
+          if git diff --quiet -- upstream/CometixSpace-claude-code; then
+            echo "Submodule is already at origin/master."
+            exit 0
+          fi
+
+          git add upstream/CometixSpace-claude-code
+          git commit -m "chore: update CometixSpace claude-code upstream"
+          git push

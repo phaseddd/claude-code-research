@@ -1,0 +1,67 @@
+# Local/private research material.
+private/
+
+# Generated npm/global-prefix materialization output.
+artifacts/**
+!artifacts/
+!artifacts/.gitkeep
+
+# Obsidian workspace state.
+.obsidian/
+
+# Common AI agent workspaces, caches, and local state.
+.codex/
+.agents/
+.claude/
+.claude-code/
+.cursor/
+.continue/
+.windsurf/
+.roo/
+.serena/
+.gemini/
+.qwen/
+.openai/
+.mcp/
+.aider*
+.augment/
+.crush/
+.goose/
+
+# Nested AI agent state if tools are launched below the repo root.
+**/.codex/
+**/.agents/
+**/.claude/
+**/.cursor/
+**/.continue/
+**/.windsurf/
+
+# Environment and secrets.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node/npm generated files.
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+
+# Temporary files and local scratch directories.
+tmp/
+tmp*/
+temp/
+*.tmp
+*.bak
+*.log
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
