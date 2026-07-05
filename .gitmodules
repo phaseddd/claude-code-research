@@ -1,4 +1,4 @@
-[submodule "upstream/CometixSpace-claude-code"]
-	path = upstream/CometixSpace-claude-code
+[submodule "CometixSpace-claude-code"]
+	path = CometixSpace-claude-code
 	url = https://github.com/CometixSpace/claude-code.git
 	branch = master

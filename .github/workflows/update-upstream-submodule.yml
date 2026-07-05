@@ -27,17 +27,17 @@ jobs:
 
       - name: Move submodule to latest upstream master
         run: |
-          git submodule update --init --recursive upstream/CometixSpace-claude-code
-          git -C upstream/CometixSpace-claude-code fetch origin master --tags
-          git -C upstream/CometixSpace-claude-code checkout -B master origin/master
+          git submodule update --init --recursive CometixSpace-claude-code
+          git -C CometixSpace-claude-code fetch origin master --tags
+          git -C CometixSpace-claude-code checkout -B master origin/master
 
       - name: Commit changed submodule pointer
         run: |
-          if git diff --quiet -- upstream/CometixSpace-claude-code; then
+          if git diff --quiet -- CometixSpace-claude-code; then
             echo "Submodule is already at origin/master."
             exit 0
           fi
 
-          git add upstream/CometixSpace-claude-code
+          git add CometixSpace-claude-code
           git commit -m "chore: update CometixSpace claude-code upstream"
           git push
