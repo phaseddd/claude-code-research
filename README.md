@@ -1,24 +1,17 @@
 # Claude Code Research
 
-This repository is my personal research workspace for Claude Code.
+这是一个面向 Claude Code 的个人研究项目。
 
-The purpose is to understand Claude Code as a real shipped product: its release
-artifacts, runtime entry points, CLI behavior, npm installation shape, and the
-patch surface around `cli.js`. It is not an unofficial distribution, not a
-replacement client, and not a support project for general users.
+我想研究的不是某个抽象意义上的 CLI 工具，而是 Claude Code 作为一个真实发布物的完整形态：它如何被打包、如何启动、运行入口在哪里，`cli.js` 承担了什么职责，npm 安装之后的产物长什么样，以及哪些位置构成了可以被分析、验证和实验的补丁切面。
 
-## Upstream Baseline
+这个仓库不会试图成为 Claude Code 的替代发行版，也不会伪装成面向普通用户的使用指南。它更像是一张长期展开的研究台面：把发布产物、源码线索、补丁实验和可复现脚本放在同一个坐标系里，方便持续观察、拆解和验证。
 
-This project uses [CometixSpace/claude-code](https://github.com/CometixSpace/claude-code)
-as the upstream baseline.
+## 致谢与基线
 
-I am grateful to the author of that project. Their work provides a practical
-route for studying Claude Code from the published package instead of treating
-the release artifact as an opaque black box. For this repository, that matters:
-my research needs a traceable source-level baseline that can be compared with
-npm-installed artifacts and local patch experiments.
+本项目以 [CometixSpace/claude-code](https://github.com/CometixSpace/claude-code) 作为重要基线。
 
-The upstream project is kept here as a Git submodule, not as a fork, because the
-focus is different. This repository is for my own Claude Code research notes,
-reproducible experiments, and patch investigations. The submodule keeps the
-upstream work visible, credited, and mechanically traceable as the baseline.
+感谢上游作者的工作。它为研究 Claude Code 提供了一条非常关键的路径：不是只把官方发布物当成一个无法触碰的黑盒，而是把 npm 产物、源码还原、补丁过程和重新组织后的项目结构连接起来。对我来说，这一点非常重要，因为本仓库后续的研究不只是阅读和记录，也会涉及对 `cli.js` 以及相关外部依赖的对照、实验和验证。
+
+因此，`CometixSpace-claude-code` 会以 Git submodule 的形式保留在本仓库中。这里选择引用上游，而不是 fork 上游，是因为两个项目的重心并不相同：上游项目是这条路线的基础工程和关键参照，本仓库则是围绕 Claude Code 展开的个人研究记录、实验脚本和补丁分析。
+
+换句话说，CometixSpace 的项目是这个研究仓库的起点之一，也是我持续对照 Claude Code 发布物时必须保留的基线。这个引用既是技术上的可追溯锚点，也是对上游工作的明确致谢。
