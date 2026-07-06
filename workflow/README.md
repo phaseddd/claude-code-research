@@ -1,0 +1,27 @@
+# workflow/ — 知识库维护流程框架
+
+这个目录是本仓库知识库的**流程框架**（不是知识内容本身）。它规定「每次研究收尾，怎么把结论可靠地沉淀成一个知识页」。
+
+面向两类读者：
+
+- **人**（维护者）：想知道知识库怎么维护、页面怎么写。
+- **AI**（Claude Code / Codex）：每次会话经由根目录 `CLAUDE.md` / `AGENTS.md` 里的指针被引导到这里，按 `intake.md` 执行入库。
+
+## 内容
+
+- `intake.md` —— 入库流程本体（每次研究收尾必走的六步，带卡点）。
+- `schema.md` —— 知识库结构规则（frontmatter 字段、kind、status、tag、命名、可见性）。
+- `templates/` —— 四种页面的空模板（concept / mechanism / case / decision）。
+
+## 框架 vs 内容（重要纪律）
+
+- 本目录只放**框架**：规则、流程、空模板。可公开、随仓库走。
+- **知识内容**（结论页，以及每个知识库根自己的 `index.md` / `log.md` / `glossary.md`）放在 `analysis/`（公开）或 `private/analysis/`（不公开），**不进这里**。
+
+## 怎么用
+
+研究收尾时，直接读并执行 `intake.md`。它会一步步把你（或 AI）带着走完选类型、填元信息、查冲突、更新索引、写日志、判定状态。规则细节都在 `schema.md`。
+
+## 设计依据
+
+方案调研与决策记录见 `private/analysis/09-knowledge-base-structure-proposal.md`（结构提案）与 `private/analysis/10-knowledge-workflow-harness-design.md`（工作流 harness 设计与三家框架调研）。
