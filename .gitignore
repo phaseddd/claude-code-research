@@ -2,9 +2,7 @@
 private/
 
 # Generated npm/global-prefix materialization output.
-artifacts/**
-!artifacts/
-!artifacts/.gitkeep
+artifacts/
 
 # Obsidian workspace state.
 .obsidian/
