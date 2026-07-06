@@ -18,7 +18,7 @@ private/analysis/  = 不公开（本地，被 gitignore）
 ```yaml
 ---
 title: 页面标题
-kind: concept | mechanism | case | decision
+kind: concept | mechanism | case | decision | investigation
 status: draft | active | stale | superseded
 updated: 2026-07-06
 applies_to: 适用的版本或上下文（如 claude-code 2.1.201；无版本绑定写 general）
@@ -32,14 +32,15 @@ tags:
 - **不含 `visibility`**（见第 1 节，由路径推导）。
 - 不许占位符：`tags` 写 `TODO`、`applies_to` 留空，都算没填。
 
-## 3. kind（页面类型，先 4 种）
+## 3. kind（页面类型，先 5 种）
 
 - `concept` —— 解释一个名词 / 概念是什么。
 - `mechanism` —— 讲清楚一个流程 / 系统怎么运作。
 - `case` —— 分析一个具体项目或对象。
 - `decision` —— 记录本项目为什么这么选。
+- `investigation` —— 调查 / 验证过程记录：一次调查怎么做的、验证了什么、试过哪些路径（含失败或排除的）、还有哪些没确认。适合「过程本身就是产物」或「结论还没定」的情况；一旦凝成明确结论，再转写成上面四种之一，验证细节内联进那页的证据章节。
 
-不够用时再加（如 `evidence` / `note`），但先从这 4 种起步，别一上来铺一堆用不上的类型。
+`evidence`（证据）默认不独立成页——它是各结论页里「证据与复核」章节的内容；只有证据量大到要独立、或要被多个页面共同引用时，才升成独立页。其它类型不够用时再加，别一上来铺一堆用不上的。
 
 ## 4. status（成熟度，四态）
 

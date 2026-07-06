@@ -21,7 +21,7 @@
 
 ## 第 1 步 · 选类型
 
-- 从 `concept` / `mechanism` / `case` / `decision` 选一个（定义见 `schema.md` 第 3 节）。
+- 从 `concept` / `mechanism` / `case` / `decision` / `investigation` 选一个（定义见 `schema.md` 第 3 节）。
 - 打开 `workflow/templates/` 里对应的模板。
 
 **没选类型（= 没有模板可填）→ 停。**

@@ -11,7 +11,7 @@
 
 - `intake.md` —— 入库流程本体（每次研究收尾必走的六步，带卡点）。
 - `schema.md` —— 知识库结构规则（frontmatter 字段、kind、status、tag、命名、可见性）。
-- `templates/` —— 四种页面的空模板（concept / mechanism / case / decision）。
+- `templates/` —— 五种页面的空模板（concept / mechanism / case / decision / investigation）。
 
 ## 框架 vs 内容（重要纪律）
 
