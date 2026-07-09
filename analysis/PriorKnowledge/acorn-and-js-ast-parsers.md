@@ -1,7 +1,7 @@
 ---
 title: acorn 与 JavaScript AST 解析工具
 kind: concept
-status: draft
+status: active
 updated: 2026-07-09
 applies_to: general；acorn 事实截至 2026-07（v8.17.0）
 tags:
@@ -150,13 +150,13 @@ acorn 的价值很大程度上来自「它已经在你的依赖树里」：
 - acorn 在 AI 编程工具内的**直接**用途缺公开证据；主流证据指向 tree-sitter。Claude Code 是否内部用 acorn，未查到公开证据。
 - ES2025/ES2026 逐项语法覆盖未逐条核实（`using`/`await using`、import attributes、RegExp modifiers 已确证）。
 
-## 待维护者拍板（第 3 步冲突复检 = WARNING）
+## 冲突复检与处置（第 3 步）
 
-冲突复检（全新上下文子代理）总裁决 **WARNING**，无 BLOCKER（全库当前无 `status: active` 的 workflow 页可被推翻）。以下三点需人工拍板，故本页暂留 `status: draft`：
+冲突复检（全新上下文子代理）总裁决 **WARNING**，无 BLOCKER（全库当时无 `status: active` 的 workflow 页可被推翻）。三点 WARNING 已交维护者拍板（2026-07-09），处置如下 —— 据此本页升为 `active`：
 
-1. **旧文是否标 stale**：`private/analysis/old/docs/JavaScript-AST-解析工具深度指南.md` 记的 acorn 版本（8.16.0）、把 acorn 单述为「递归下降」、首发「10 月」，已被本页更新或精化。是否给旧文标 stale 或加「版本 / 概念以本页为准」注记？（旧文无本 workflow 的 frontmatter、非 active，故不构成 BLOCKER，本轮不擅改。）
-2. **acorn 首发月份**：本页「2012 下半年（9 月存疑）」vs 旧文「10 月」，待一手来源（作者博客 / CHANGELOG）定稿。
-3. **证据边界**：本次一手页面抓取（WebFetch）网关不可用，除已核的版本号外，多数事实来自 WebSearch 对权威源的摘要（见「依据」）。
+1. **旧文是否标 stale** → 维护者定：**不处理**。旧文 `private/analysis/old/docs/JavaScript-AST-解析工具深度指南.md`（记 acorn 8.16.0、把 acorn 单述为「递归下降」、首发「10 月」）保持原样，本页作为「概念 + 当前事实」入口，与旧文按互补关系并存。
+2. **acorn 首发月份**（本页「2012 下半年，9 月存疑」vs 旧文「10 月」）→ 维护者定：**不追**。保留本页谨慎口径。
+3. **证据边界**（除版本号外多为 WebSearch 摘要）→ 维护者定：**接受**。核心结论另有项目内代码（补丁一律用 acorn）与行业共识支撑，边界详见「依据」。
 
 ## 相关页面
 

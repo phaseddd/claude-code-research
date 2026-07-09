@@ -4,4 +4,4 @@
 
 | 页面 | 说明 | 标签 | status |
 |---|---|---|---|
-| [PriorKnowledge/acorn-and-js-ast-parsers.md](PriorKnowledge/acorn-and-js-ast-parsers.md) | acorn 与 JS AST 解析工具：AST/CST/Pratt 概念、acorn 本体（8.17.0）、ESTree、生态位与同类对比、本项目一律用 acorn 改写 cli.js | `topic:ast` · `topic:acorn` · `form:concept` | draft |
+| [PriorKnowledge/acorn-and-js-ast-parsers.md](PriorKnowledge/acorn-and-js-ast-parsers.md) | acorn 与 JS AST 解析工具：AST/CST/Pratt 概念、acorn 本体（8.17.0）、ESTree、生态位与同类对比、本项目一律用 acorn 改写 cli.js | `topic:ast` · `topic:acorn` · `form:concept` | active |
