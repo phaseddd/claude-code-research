@@ -16,7 +16,7 @@
 ## 框架 vs 内容（重要纪律）
 
 - 本目录只放**框架**：规则、流程、空模板。可公开、随仓库走。
-- **知识内容**（结论页，以及每个知识库根自己的 `index.md` / `log.md` / `glossary.md`）放在 `analysis/`（公开）或 `private/analysis/`（不公开），**不进这里**。
+- **知识内容**（结论页，以及 `index.md` / `log.md` / `glossary.md`）放在公开知识库根 `analysis/`，**不进这里**。`private/` 是本地非公开材料区（脚本、一次性草稿），既不是框架也不是知识库根。
 
 ## 怎么用
 
@@ -24,4 +24,4 @@
 
 ## 设计依据
 
-方案调研与决策记录见 `private/analysis/09-knowledge-base-structure-proposal.md`（结构提案）与 `private/analysis/10-knowledge-workflow-harness-design.md`（工作流 harness 设计与三家框架调研）。
+本框架的结构提案与工作流 harness 设计（含三家框架调研）源自研究阶段的两份草稿，结论已内化进本目录的 `schema.md` / `intake.md` / 模板；原始草稿属一次性材料，落地后已清理，不再单独留存。

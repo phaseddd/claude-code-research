@@ -26,9 +26,9 @@
 
 **没选类型（= 没有模板可填）→ 停。**
 
-## 第 2 步 · 决定放哪 + 填 frontmatter + 写正文
+## 第 2 步 · 填 frontmatter + 写正文
 
-- 决定可见性：内容能公开 → 放 `analysis/`；不能公开 → 放 `private/analysis/`。（可见性由路径决定，见 `schema.md` 第 1 节，不写进 frontmatter。）
+- 知识页统一放公开根 `analysis/`（见 `schema.md` 第 1 节）。`private/` 只是本地非公开材料区（脚本、一次性草稿），不是知识库根、不走本流程；确有不能公开的结论时先停下来跟维护者确认怎么归置，别默认塞进 `private/` 当知识页。
 - 套模板，六个 frontmatter 字段一个不能缺：`title` / `kind` / `status` / `updated` / `applies_to` / `tags`。
 - 先填 `status: draft`（成不成熟第 6 步再判）。
 - 禁止占位符：`tags` 写 `TODO`、`applies_to` 留空，都算没填。
@@ -49,14 +49,14 @@
 
 ## 第 4 步 · 更新索引
 
-- 往**这个知识库根**的 `index.md` 加一行：相对路径 + 一句话说明 + 标签。
+- 往 `analysis/index.md` 加一行：相对路径 + 一句话说明 + 标签。
 - 硬话（消费机制）：`index` 不更新 = 这页检索不到 = 等于没入库。
 
 **没更新 `index.md` → 停。**
 
 ## 第 5 步 · 写日志
 
-- 往**这个知识库根**的 `log.md` 追加一行，固定格式：
+- 往 `analysis/log.md` 追加一行，固定格式：
 
   ```text
   [2026-07-06] kind | 一句话结论 | 推翻旧结论？（无 / superseded: 旧页名）

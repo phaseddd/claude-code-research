@@ -11,4 +11,4 @@
 - 流程本体：`workflow/intake.md`
 - 结构规则：`workflow/schema.md`
 - 页面模板：`workflow/templates/`
-- 公开知识库根：`analysis/`　不公开知识库根：`private/analysis/`（被 gitignore）
+- 知识库根：`analysis/`（唯一，公开上 GitHub）。`private/` 不是知识库根，是本地非公开材料区（脚本、一次性草稿，被 gitignore），不走入库流程。
