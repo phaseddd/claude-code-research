@@ -9,13 +9,18 @@
 - `topic:ast` —— 抽象语法树（AST）及其解析工具这一主题域。
 - `topic:acorn` —— acorn 这个 JavaScript 解析器及其生态。
 - `topic:claude-code` —— Claude Code（Anthropic 官方 CLI）本体及其分发 / 逆向 / 补丁这一主题域。
+- `topic:slash-command` —— Claude Code 斜杠命令（`/…`）子系统：命令对象、分发与 builtin/prompt/local 等形态。
+- `topic:insights` —— Claude Code `/insights` 使用报告能力（会话扫描、usage-data、内嵌提示词与 HTML 报告）。
 - `topic:bun-sea` —— Bun SEA（Single Executable Application）单文件可执行分发形态与其内嵌模块提取这一主题域。
 - `topic:npm` —— npm 包的分发 / 分包 / 安装机制这一主题域。
 
 ### `form:`（形态）
 
 - `form:concept` —— 解释「是什么」的概念页。
+- `form:mechanism` —— 讲清一个流程 / 系统怎么运作的机制页。
 - `form:case` —— 分析一个具体项目 / 对象的案例页。
+- `form:decision` —— 记录本项目为什么这么选的决策页。
+- `form:investigation` —— 调查 / 验证过程记录页。
 
 ## 核心术语（避免漂移）
 
@@ -26,3 +31,7 @@
 - **Bun SEA（Single Executable Application）** —— Bun 把打包后的 JS 连同 native 模块编译进单个原生可执行文件的分发形态；内嵌数据存放在二进制的专用 section（PE/ELF 的 `.bun`、MachO 的 `__BUN/__bun`），尾部有固定 trailer `\n---- Bun! ----\n`。Claude Code 自 v2.1.113 起用它分发。
 - **SEA（Single Executable Application / 单文件可执行）** —— 「把运行时 + 代码打进一个可执行文件」的统称。本库语境默认指 **Bun SEA**；注意与 Node.js 官方的 SEA 特性区分，别混。
 - **cli.js** —— Claude Code 打包后的主程序 JavaScript（十几 MB 的单文件 bundle），是 Bun SEA 提取和 acorn 补丁的核心目标文件。
+- **slash command（斜杠命令）** —— 用户以 `/` 开头触发的 CLI 内建或扩展命令；本库写「斜杠命令」，标签用 `topic:slash-command`。
+- **/insights** —— Claude Code builtin 斜杠命令：本地分析历史会话并生成 usage 报告 HTML；细节见 mechanisms / concepts 下 insights 相关页。
+- **usage-data** —— Claude 配置根下存放 `/insights` 产物与缓存的目录名（含 `session-meta/`、`facets/`、`report*.html`）。
+- **facet（会话 facet）** —— `/insights` 对单会话 LLM 抽取的结构化语义标签（目标、满意度、摩擦等），缓存于 `usage-data/facets/`。
