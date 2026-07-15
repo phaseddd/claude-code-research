@@ -1,8 +1,8 @@
 ---
 title: Claude Code /insights 命令的端到端流程
 kind: mechanism
-status: draft
-updated: 2026-07-15
+status: active
+updated: 2026-07-16
 applies_to: claude-code / @cometix/claude-code 2.1.209
 tags:
   - topic:claude-code
@@ -15,18 +15,19 @@ tags:
 
 ## 一句话结论
 
-`/insights` 是 builtin 的 **`type: "prompt"`** 斜杠命令：在拼给当前会话主模型的内容之前，先在本地扫历史会话、用 **session-meta / facets 双层缓存** 与多轮 **内部** 模型调用（`querySource: "insights"`）做成 HTML 使用报告，再要求主模型 **原样** 输出一段带 `file://` 链接的固定分享话术。报告正文在 HTML，聊天窗只负责递链接并允许继续追问。
+`/insights` 是 builtin 的 **`type: "prompt"`** 斜杠命令：在拼给当前会话主模型的内容之前，先在**本机**扫历史会话、读写 **session-meta / facets** 缓存，并把会话文本的**有损投影**送进多轮 **内部** 模型调用（`querySource: "insights"`）做成 HTML 使用报告，再要求主模型 **原样** 输出一段带 `file://` 链接的固定分享话术。磁盘上的报告与缓存是本地的；语义分析依赖模型后端，不是「纯本地、数据不出机」的离线分析。聊天窗只负责递链接并允许继续追问，报告正文在 HTML。
 
 ## 输入
 
 | 输入 | 说明 |
 |---|---|
 | 用户动作 | 在交互会话中输入 `/insights` |
-| 命令侧约束（包装层） | `requires.workspace: true`；`disableModelInvocation: true`（禁止被 Skill/Agent 等路径自动调用） |
+| 命令侧约束（包装层） | `requires.workspace: true`；`disableModelInvocation: true`（包装层禁止被 Skill/Agent 等路径自动调用；实现体对象本身无此字段） |
 | 本地数据 | 配置根下的 `projects/`（会话 transcript）；可选已有 `usage-data/` 缓存 |
+| 模型侧 | 内部 `querySource: "insights"` 调用会带上经 `Gm_` 投影（及可能的 chunk 摘要）后的会话文本；走与普通对话相同的模型路由默认（Opus 侧 `sS()`） |
 | 本页证据 | `artifacts/2.1.209/global-prefix/node_modules/@cometix/claude-code/cli.js`（包内 `VERSION` 字面量为 `2.1.209`） |
 
-**未做**：实际执行 `/insights`、请求线上 API、读取本机用户隐私报告内容。结论来自对该 `cli.js` 的 **全局 acorn 8.17.0 结构提取 + 锚点核对**。
+**未做**：实际执行 `/insights`、请求线上 API、读取本机用户隐私报告内容。结论来自对该 `cli.js` 的 **acorn 定位 + 函数体/字面量锚点核对**（不是对整包 20MB 做一次完整语义还原）。
 
 各阶段 **官方提示词全文与中文对照** 见：[Claude Code /insights 内嵌提示词契约](../concepts/claude-code-insights-prompts.md)。本页只维护链路与设计取舍，提示词不双源粘贴。
 
@@ -38,15 +39,15 @@ tags:
 
 ```mermaid
 flowchart TD
-  A["用户输入 /insights"] --> B["斜杠分发\n命中 builtin prompt 命令"]
-  B --> C["progressMessage:\nanalyzing your sessions"]
+  A["用户输入 /insights"] --> B["斜杠分发<br/>命中 builtin prompt 命令"]
+  B --> C["progressMessage:<br/>analyzing your sessions"]
   C --> D["await getPromptForCommand"]
-  D --> E["generateUsageReport Osp\n扫会话 → 缓存 → 漏斗 LLM → HTML"]
-  E --> F["buildInsightsResponsePrompt Nsp\n拼主会话强制话术"]
-  F --> G["分发层组装消息\nshouldQuery: true"]
+  D --> E["generateUsageReport Osp<br/>扫会话 → 缓存 → 漏斗 LLM → HTML"]
+  E --> F["buildInsightsResponsePrompt Nsp<br/>拼主会话强制话术"]
+  F --> G["分发层组装消息<br/>shouldQuery: true"]
   G --> H["主会话模型再 query"]
   H --> I["用户可见: 固定分享句 + file://"]
-  E --> J["磁盘: usage-data/report*.html\nsession-meta / facets"]
+  E --> J["磁盘: usage-data/report*.html<br/>session-meta / facets"]
 ```
 
 ```text
@@ -113,6 +114,7 @@ async getPromptForCommand(e, t) {
 | `aggregateData` | `Msp` | 跨会话聚合 |
 | `extractToolStats` | `Dsp` | 单会话工具/语言等统计 |
 | `detectMultiClauding` | `Lsp` | 多会话时间重叠 |
+| `deduplicateSessionBranches` | `Vm_` | 同 session id 分支去重（保留「更优」meta） |
 | `buildExportData` | `lh_` | 结构化导出形状 |
 | `normalizeSessionMeta` | `Psp` | session-meta 规范化相关 |
 | `default` | `ph_` | 命令实现对象 |
@@ -122,7 +124,7 @@ async getPromptForCommand(e, t) {
 - **为何 `prompt` 而不是 `local`？**  
   `local` 在本地 `call` 后直接返回文本/跳过主模型；`prompt` 在 `getPromptForCommand` 之后把内容打成会话消息，并在分发路径上设 **`shouldQuery: true`**（`await e.getPromptForCommand` 调用点附近可核对）。产品形态是「报告 + 同一会话可追问」，不是一次性 dump。
 - **为何包装层 `disableModelInvocation: true`？**  
-  引擎会读大量历史并多次内部调模型；该标志限制 Skill/Agent 自动触发，要求用户显式输入。
+  引擎会读大量历史并多次内部调模型；该标志挂在**命令表包装对象**上，限制 Skill/Agent 等自动调用路径，要求用户显式输入。实现体本身不带此字段——约束生效取决于分发层读的是包装描述符。
 
 ---
 
@@ -155,7 +157,7 @@ processPrompt 路径（简化）
 
 ### L3 · `getPromptForCommand` 实现体
 
-brace 抽出的实现逻辑：
+实现逻辑：
 
 ```text
 async getPromptForCommand(/* e */) {
@@ -163,7 +165,7 @@ async getPromptForCommand(/* e */) {
   { insights, htmlPath, data, remoteStats }
       = await Osp({ collectRemote })
 
-  reportUrl = `file://${htmlPath}`
+  reportUrl = `file://${htmlPath}`         // 字面拼接；见「已知边界」
 
   statsLine = sessions · messages · hours · commits
               （若 total_sessions_scanned > total_sessions
@@ -192,7 +194,7 @@ async getPromptForCommand(/* e */) {
 **设计取舍**
 
 - 分析必须在 `getPromptForCommand` 内完成：主模型本轮需要已存在的 `file://` 与 insights JSON。  
-- **`collectRemote: false`**：本命令路径不收集远程会话；`remoteStats` 保持未赋值。其它入口是否打开远程不在本页断言。
+- **`collectRemote` / `remoteStats`**：调用处把 `collectRemote: false` 传入 `Osp`，但 **`Osp` 函数体不读取参数对象**；`remoteStats` 对应函数内未赋值的局部 `let t`，随返回值原样带出。在 2.1.209 此路径上它们是**遗留形参/空槽**，不能据此推断「存在可打开的远程会话收集开关」。
 
 ---
 
@@ -228,18 +230,19 @@ flowchart TB
     P["projects/** 会话文件"]
   end
   subgraph cache [缓存]
-    SM["session-meta\n确定性统计"]
-    FC["facets\nLLM 语义标签"]
+    SM["session-meta<br/>确定性统计"]
+    FC["facets<br/>LLM 语义标签"]
   end
   subgraph filter [过滤]
-    F1["丢弃元会话\nrecord_facets / JSON-only"]
-    F2["user_message_count ≥ 2\nduration_minutes ≥ 1"]
-    F3["剔除仅 warmup_minimal"]
+    F1["丢弃元会话<br/>record_facets / JSON-only"]
+    F2["user_message_count ≥ 2<br/>duration_minutes ≥ 1"]
+    F3["聚合侧剔除仅 warmup_minimal"]
   end
   subgraph llm [内部 LLM querySource=insights]
+    G0["Gm_ 有损文本投影"]
     C["chunk 摘要 maxTokens 500"]
     F["facet 抽取 maxTokens 4096"]
-    S["7 section 并行 maxTokens 8192"]
+    S["7 section 并行 maxTokens 8192<br/>采样 50/20/15"]
     G["at_a_glance 二次合成"]
   end
   subgraph out [输出]
@@ -249,7 +252,7 @@ flowchart TB
   P --> SM
   P --> F1 --> F2
   F2 --> FC
-  FC --> C --> F
+  FC --> G0 --> C --> F
   F --> F3 --> S --> G --> H --> R
   SM --> F2
 ```
@@ -304,6 +307,8 @@ ch_:
 - `Qm_` 写 session-meta 缓存。  
 - 读失败时：若仍有旧缓存则回退旧缓存。
 
+仅进入「新建/刷新」队列的 session 才会 `nIo` 读盘；**纯缓存命中**的 session 只有 meta，**本轮 `u`（transcript 句柄 Map）里没有原文**。后续 facet 新抽依赖 `u` 中仍握有的 log。
+
 ##### （4）质量过滤
 
 字面谓词（同时满足才保留）：
@@ -327,46 +332,89 @@ keep = (user_message_count >= 2) AND (duration_minutes >= 1)
 ```text
 对每个通过质量过滤的 session:
   cached = Ym_(sessionId)
+    · 读 facets/<id>.json
+    · 未通过 $sp 校验 → unlink 该文件并视为无缓存
   if cached → 使用
-  else if 仍握有 transcript 且 新抽名额未满:
-      text = Km_(transcript)     // 可能多段 chunk 摘要 P-chunk-sum
+  else if 本轮 u 中仍有 transcript 且 新抽名额未满:
+      text = Km_(transcript)
+            · 先 Gm_(log) 做有损投影（见下）
+            · 投影长度 ≤ 30000 → 直接用
+            · 否则按 25000 切片，每片 P-chunk-sum（maxTokens 500），再拼回
       facet = Zm_(text, id)      // P-facet + schema，失败 → null
       if facet → Xm_ 写缓存
-
-再过滤:
-  若 facet.goal_categories 仅 warmup_minimal → 该 session 不进最终聚合
+  else:
+      // 无缓存且本轮没有 transcript（常见：meta 缓存命中未重读）
+      // 或名额已满 → 该 session 本轮无 facet
 ```
+
+**`Gm_` 投影规则**（进模型前的会话文本，不是原始 JSONL）：
+
+| 来源 | 写入投影的内容 |
+|---|---|
+| 头 | session id 前 8 位、日期、项目、时长（分钟） |
+| user | `[User]:` + 文本，**每条最多 500 字符**（string 或 text block） |
+| assistant text | `[Assistant]:` + 文本，**每条最多 300 字符** |
+| tool_use | 仅 `[Tool: name]`，**不含参数/结果全文** |
 
 `$sp` 校验 facet 对象：`underlying_goal` / `outcome` / `brief_summary` 为 string；`goal_categories` / `user_satisfaction_counts` / `friction_counts` 为非 null object。提示词全文见 concept 页 **P-facet / P-facet-schema**。
 
-**设计取舍**：facets **贵且不稳**（依赖模型），与可复算 meta 分目录；单次最多新抽 50，避免首次运行费用爆炸。
+**设计取舍**：facets **贵且不稳**（依赖模型），与可复算 meta 分目录；单次最多新抽 50，避免首次运行费用爆炸。投影先截断再决定是否 chunk，控制的是**送进模型的文本**，不是磁盘上的原始 transcript 体积。
 
 ##### （6）聚合 · 报告 section · At a Glance
 
-- **`Msp(sessions, facets)`**  
-  跨会话累加工具计数、语言、token、git、满意度/摩擦分布等；调用 **`Lsp`（multi-clauding）**：把各 session 的 `user_message_timestamps` 摊平，在 **1800000 ms（30 分钟）** 窗口内检测跨 session 重叠，产出 `overlap_events` / `sessions_involved` / `user_messages_during` 一类统计。  
-  并设置 `total_sessions_scanned` = 枚举阶段的总会话数 `n`。
+**warmup 与两套下游输入**（不要合成「已彻底剔除」）：
 
-- **`th_(aggregated, facets)`**  
-  1. 并行跑 section 数组（各 `maxTokens: 8192`，经 `Isp`）：  
-     `project_areas` · `interaction_style` · `what_works` · `friction_analysis` · `suggestions` · `on_the_horizon` · `fun_ending`  
-  2. 把各章结果压成 bullet，再调 **P-at-a-glance** 二次合成四段总览。  
+```text
+x(sessionId) = facet 存在
+             且 goal_categories 中 >0 的键恰好只有 warmup_minimal
+
+k = 质量过滤后的 sessions，去掉 x 为真的
+R = facet map，去掉 x 为真的条目
+_ = 本轮全部 facet（含 warmup_minimal；也含未进 k 的）
+
+I = Msp(k, R)          // 聚合统计：不含纯 warmup
+I.total_sessions_scanned = 枚举阶段总会话数 n
+P = await th_(I, _)    // section 编排：第二个参数是完整 _，不是 R
+```
+
+即：**聚合数字按 `k`/`R` 过滤；`th_` 拼 section 提示词时遍历的是完整 facet map `_`**。纯 warmup 会话仍可能出现在 section 侧的采样列表里（取决于 map 迭代顺序与下面的 slice 帽）。
+
+- **`Msp(sessions, facets)`**  
+  跨会话累加工具计数、语言、token、git、满意度/摩擦分布等；调用 **`Lsp`（multi-clauding）**：把各 session 的 `user_message_timestamps` 摊平，在 **1800000 ms（30 分钟）** 窗口内检测跨 session 重叠，产出 `overlap_events` / `sessions_involved` / `user_messages_during` 一类统计。
+
+- **`th_(aggregated, facetsMap)`**  
+  在调用各 section 之前，从 `facetsMap.values()` 抽出三段**有上限**的上下文（不是全量 facet 原文）：
+
+  | 采样 | 上限 | 内容 |
+  |---|---|---|
+  | SESSION SUMMARIES | **50** | `brief_summary` + outcome + claude_helpfulness |
+  | FRICTION DETAILS | **20** | 有 `friction_detail` 的条目 |
+  | USER INSTRUCTIONS | **15** | `user_instructions_to_claude` 摊平后的条目 |
+
+  再并行跑 section 数组（各 `maxTokens: 8192`，经 `Isp`）：  
+  `project_areas` · `interaction_style` · `what_works` · `friction_analysis` · `suggestions` · `on_the_horizon` · `fun_ending`  
+
+  然后把各章结果压成 bullet，调 **P-at-a-glance** 二次合成四段总览。  
 
   提示词全文见 concept 页对应 P-section-* / P-at-a-glance。
 
 ```text
 漏斗压缩（上下文与费用）
 
-  原始 transcript（可能极大）
-        │ Km_ / P-chunk-sum
+  磁盘上的会话 log（JSONL 等）
+        │ Gm_（有损投影：截断 + 只留 tool 名）
         ▼
-  分块摘要拼接
+  投影文本（≤30000 则直接用；否则 25000 切片）
+        │ Km_ / P-chunk-sum（按需）
+        ▼
+  分块摘要拼接（或未分块的投影）
         │ Zm_ / P-facet + schema
         ▼
   单会话 JSON facet（结构化、可缓存）
-        │ Msp
+        │ Msp(k, R)          ← 聚合用过滤后集合
         ▼
   跨会话聚合统计
+        │ th_(I, _) + 50/20/15 采样  ← section 用完整 facet map
         │ 7 × P-section（并行）
         ▼
   报告各章 JSON
@@ -380,14 +428,14 @@ keep = (user_message_count >= 2) AND (duration_minutes >= 1)
 ```text
 mkdir(usage-data)
 writeFile( report-<YYYYMMDDHHmmss>.html , html, { encoding: "utf-8", mode: 384 } )
-writeFile( report.html , 同内容, { mode: 384 } )     // 384 = 0600
+writeFile( report.html , 同内容, { mode: 384 } )     // 384 = Unix 0600
 
 return {
   insights,      // 含 at_a_glance 与各 section
   htmlPath,      // 带时间戳的那份路径
   data,          // 聚合统计
-  remoteStats,   // 本路径下为未赋值
-  facets
+  remoteStats,   // 未赋值局部，恒为 undefined
+  facets         // 过滤 warmup 后的 R
 }
 ```
 
@@ -414,11 +462,11 @@ return {
 | 点 | 代码事实 | 含义（不夸大） |
 |---|---|---|
 | 双缓存目录 | `session-meta` / `facets` | 可复算 vs 贵且不稳 |
-| 漏斗多层 LLM | chunk → facet → section → glance | 上下文窗口与费用约束下的压缩 |
-| 过滤 | 元会话 / 短会话 / warmup | 教练型报告怕噪声 |
-| 批与上限 | 50 / 200 / 10 / 50… | 单次运行成本帽 |
+| 漏斗多层 LLM | `Gm_` → chunk → facet → section → glance | 上下文窗口与费用约束下的压缩；进模型的是投影 |
+| 过滤 | 元会话 / 短会话；聚合侧 warmup | section 采样仍见完整 facet map |
+| 批与上限 | 50 / 200 / 10 / 50…；section 上下文 50/20/15 | 单次运行成本帽 |
 | `querySource` | 三处固定字符串 | 与普通对话请求在来源字段上分离 |
-| `mode: 384` | writeFile 选项 | 本地报告权限收紧 |
+| `mode: 384` | writeFile 选项 | 意图为 Unix `0600`；平台差异见边界 |
 
 ---
 
@@ -461,6 +509,7 @@ Nsp({
   可见 ── 浏览器中的 HTML 报告
   注入但默认不展示 ── insights JSON 全文（在 isMeta / 模型上下文中）
   磁盘 ── session-meta / facets 缓存（供下次加速）
+  模型后端 ── 投影后的会话文本 / facet / section 提示（内部 query）
 ```
 
 ---
@@ -469,20 +518,25 @@ Nsp({
 
 | 通道 | 内容 |
 |---|---|
-| 磁盘 | `usage-data/report-<时间戳>.html`、`usage-data/report.html`（`mode: 0600`）；更新后的 `session-meta/`、`facets/` |
+| 磁盘 | `usage-data/report-<时间戳>.html`、`usage-data/report.html`（`mode: 384` / Unix 0600 意图）；更新后的 `session-meta/`、`facets/` |
 | 当前会话（用户可见） | 固定分享话术 + `file://…` |
 | 当前会话（模型上下文） | insights JSON + header/At a Glance 摘要，供追问 |
+| 内部模型请求 | `querySource: "insights"` 的 chunk / facet / section 调用（内容为投影与结构化中间结果） |
 
-## 关键边界
+## 已知边界
 
 | 边界 | 说明 |
 |---|---|
 | 版本 | 锚定 **2.1.209** Cometix 恢复包 `cli.js`；minify 名与批大小随版本会变 |
-| 远程 | 本命令路径 `collectRemote === false` |
+| 数据落点 | HTML 与缓存写在本机 `usage-data/`；语义分析文本经模型 API，**不是**离线本地 LLM |
+| `collectRemote` | 调用处写死 `false`，且 `Osp` 不读该参数；`remoteStats` 恒未赋值 |
+| `file://` | `reportUrl = \`file://${htmlPath}\`` 直接拼接绝对路径；Windows 盘符路径在浏览器中是否可点开，本页**未运行验证** |
+| `mode: 384` | 源码字面量意图为 `0600`；Node 在 Windows 上对 mode 的落实与 Unix 不同，勿写成「全平台强制仅 owner 可读」 |
 | 配置根绝对路径 | 随环境 / `CLAUDE_CONFIG_DIR` 等变化；相对子路径以源码 join 为准 |
-| 未声称 | 网络上报、云端分析、或未在 `Osp` 字面量中出现的「N 天窗口」等产品文案 |
+| 覆盖不全 | meta 新建/刷新各最多 200；新 facet 最多 50；section 上下文 50/20/15——大库上报告是**预算内样本**，不是全历史穷尽 |
 | 空数据 | 无 projects / 全被过滤时仍可能写出 HTML，summary 可为 `_No insights generated_` |
 | 部分 LLM 失败 | 单次 facet/section 失败多为 null 跳过（见 `Zm_` / `Isp` catch），不必然整次中止 |
+| 未声称 | 网络上报产品遥测以外的「云端报告库」、或未在 `Osp` 字面量中出现的「N 天窗口」等文案 |
 | 提示词正本 | 仅 concept 页维护全文 |
 
 ## 证据与复核方式
@@ -490,9 +544,12 @@ Nsp({
 | 项 | 内容 |
 |---|---|
 | 证据文件 | `artifacts/2.1.209/global-prefix/node_modules/@cometix/claude-code/cli.js` |
-| 方法 | 全局 **acorn 8.17.0** + acorn-walk：命令对象、导出表、`Osp`/`getPromptForCommand` 函数体、`querySource` options、section 数组 |
+| 包版本 | `@cometix/claude-code` **2.1.209**（`package.json` / 包内 `VERSION`） |
+| SHA-256 | `724361250D92E0EBF10FEE99387CCD25FA29E0D463600FE06DFA02F570CC4A89` |
+| 来源链 | [CometixSpace-claude-code 恢复流水线](../PriorKnowledge/cometix-claude-code-restore.md)（基线 master@213da58 / v2.1.209） |
+| 方法 | **acorn 8.17.0** 定位命令对象、导出表、关键函数起止；对 `Osp` / `getPromptForCommand` / `Gm_` / `Km_` / `th_` / `Nsp` 等函数体与字面量做锚点核对。`tmp/` 一次性脚本若用朴素 brace 扫描，可能把带解构参数的函数截短——**不以脚本截取长度为证据** |
 | 禁止 | 执行 `/insights`、为复核打 API |
-| 可检索锚点 | `name:"insights"` · `generateUsageReport:` · `querySource:"insights"` · `user_message_count<2` · `warmup_minimal` · `mode:384` · `The user just ran /insights` · `usage-data` / `session-meta` / `facets` / `projects` · `1800000`（multi-clauding 窗口） |
+| 可检索锚点 | `name:"insights"` · `generateUsageReport:` · `function Gm_` · `querySource:"insights"` · `user_message_count<2` · `warmup_minimal` · `slice(0,50)` / `slice(0,20)` / `slice(0,15)` · `mode:384` · `The user just ran /insights` · `usage-data` / `session-meta` / `facets` / `projects` · `1800000` |
 
 `tmp/` 下若有一次性提取 JSON（gitignore），仅维护者便利，**不是**知识库正本。
 
@@ -511,11 +568,13 @@ Nsp({
 | aggregateData | `Msp` |
 | extractToolStats | `Dsp` |
 | detectMultiClauding | `Lsp` |
+| deduplicateSessionBranches | `Vm_` |
+| 会话文本有损投影 | `Gm_` |
 | 枚举会话 | `ch_` |
 | session-meta 读 / 写 | `Jm_` / `Qm_` |
 | 读 transcript | `nIo` |
 | facets 读 / 写 / 抽 | `Ym_` / `Xm_` / `Zm_` |
-| 长文处理 | `Km_`（调度）+ chunk 调用（`zm_` 等） |
+| 长文处理 | `Km_`（先 `Gm_`，按需 chunk）+ chunk 调用（`zm_` 等） |
 | section 编排 / 单章查询 | `th_` / `Isp` |
 | HTML 渲染 | `ah_` |
 | facet 校验 | `$sp` |
@@ -532,9 +591,11 @@ Nsp({
 | 读 transcript 批 | 10 | 磁盘/解析并行 |
 | 新 facet 上限 | 50 | LLM 费用帽 |
 | facet 批 | 50 | 并行抽取 |
-| 长文阈值 / 块长 | 30000 / 25000 | `Km_` |
+| 长文阈值 / 块长 | 30000 / 25000 | `Km_`（作用于 `Gm_` 投影） |
+| user / assistant 投影截断 | 500 / 300 | `Gm_` |
 | chunk / facet / section max tokens | 500 / 4096 / 8192 | 内部调用 |
+| section 上下文采样 | 50 / 20 / 15 | `th_`：summary / friction / instructions |
 | multi-clauding 窗口 | 1800000 ms（30 min） | `Lsp` |
-| HTML file mode | 384（0600） | 权限 |
+| HTML file mode | 384（Unix 0600 意图） | writeFile 选项 |
 | 质量：最少 user 消息 | 2 | 过滤 |
 | 质量：最短时长（分） | 1 | 过滤 |

@@ -2,7 +2,7 @@
 title: Claude Code /insights 内嵌提示词契约
 kind: concept
 status: active
-updated: 2026-07-15
+updated: 2026-07-16
 applies_to: claude-code / @cometix/claude-code 2.1.209
 tags:
   - topic:claude-code
@@ -15,7 +15,7 @@ tags:
 
 ## 一句话解释
 
-`/insights` 在报告引擎与主会话回复里，内嵌了多套**固定英文提示词**：它们规定内部模型如何摘要会话、抽取 facet、撰写报告各章，以及主会话模型必须如何向用户递交 `file://` 链接。本页给出 **2.1.209 `cli.js` 中的英文原文**、**中文对照**与**在链路中的位置**；不描述 slash 分发全流程（见机制页）。
+`/insights` 在报告引擎与主会话回复里，内嵌了多套**固定英文提示词**：它们规定内部模型如何摘要会话、抽取 facet、撰写报告各章，以及主会话模型必须如何向用户递交 `file://` 链接。本页给出 **2.1.209 `cli.js` 中的英文原文**、**中文对照**、**在链路中的位置**，以及 section / At a Glance 的**请求拼装方式**；不描述 slash 分发全流程（见机制页）。
 
 ## 配套机制
 
@@ -27,9 +27,12 @@ tags:
 |---|---|
 | 文件 | `artifacts/2.1.209/global-prefix/node_modules/@cometix/claude-code/cli.js` |
 | 版本字面量 | 包内 `VERSION:"2.1.209"` |
-| 方法 | 全局 acorn 8.17.0；对 template literal 做括号平衡扫描；section 数组用 acorn 解析 `name`/`maxTokens` |
+| 方法 | 全局 acorn 8.17.0；对 template literal 做括号平衡扫描；section 数组用 acorn 解析 `name`/`maxTokens`；`Isp` / `th_` / `ld` 以函数体锚点核对 |
 | 插值 | 源码为 minify 单字母参数；本页在「占位符说明」中按函数签名还原语义名，**英文原文块保持扫描结果**（含 `${e}` 等） |
+| system prompt | 内部 `hct` 调用均为 `systemPrompt: ld([])`；2.1.209 中 `ld` 为恒等函数，故 **system 为空数组**，insights 专属指令均在 `userPrompt` |
 | 未做 | 运行 `/insights`；未改写官方英文意图 |
+
+下文「英文原文」抄录的是模板本体。section / At a Glance 经 `Isp` 时，实际 `userPrompt` 还会在模板后追加 `DATA:` 与动态数据（见上文「请求拼装」）。
 
 ---
 
@@ -37,14 +40,59 @@ tags:
 
 | ID | 职责 | 调用附近 | tokens 相关 |
 |---|---|---|---|
-| P-chunk-sum | 超长 transcript 分块摘要 | `Km_` → 每块 `zm_` 类调用 | `maxOutputTokensOverride: 500` |
+| P-chunk-sum | 超长**投影文本**分块摘要 | `Km_`（先 `Gm_`）→ 每块 `zm_` 类调用 | `maxOutputTokensOverride: 500` |
 | P-facet | 单会话结构化 facet 指南 | `Zm_` 前缀 `Fm_` | 与 schema 拼接后 **4096** |
 | P-facet-schema | facet 输出 JSON schema（与指南拼接） | `Zm_` 内模板 | 同上 |
-| P-section-* | 跨会话报告七章 | `th_` → `Isp`，数组 `maxTokens: 8192` | 8192 |
-| P-at-a-glance | 四段总览（依赖其它章摘要） | `th_` 末尾 | 实现里对应该次调用的 maxTokens（section 路径为 MemberExpression / 8192 级） |
-| P-user-reply | 主会话强制分享话术 | `Nsp` / `getPromptForCommand` 返回值 | 走主会话模型，非 `querySource:"insights"` 三处内部调用 |
+| P-section-* | 跨会话报告七章 | `th_` → `Isp`（`eh_` 数组） | 各章 `maxTokens: 8192` |
+| P-at-a-glance | 四段总览（依赖其它章摘要） | `th_` 末尾 → **同一** `Isp` | **`maxTokens: 8192`** |
+| P-user-reply | 主会话强制分享话术 | `Nsp` / `getPromptForCommand` 返回值 | 走主会话模型，非内部 `querySource:"insights"` |
 
-内部 `querySource: "insights"` 共 3 处（chunk / facet / section 查询），均 `isNonInteractiveSession: true`。
+静态代码里 `querySource: "insights"` 有 **3** 处调用点：chunk、facet、以及 **section 与 At a Glance 共用的 `Isp`**。运行时第三处会先并行打满七章，再打一次 At a Glance。均 `isNonInteractiveSession: true`。
+
+---
+
+## 请求拼装 · `Isp` 与 `th_` 公共输入
+
+七个 section 与 At a Glance 都经 `Isp(descriptor, dataString)`。`Isp` 构造的 `userPrompt` 为：
+
+```text
+${descriptor.prompt}
+
+DATA:
+${dataString}
+```
+
+`maxOutputTokensOverride` 取 `descriptor.maxTokens`（七章与 At a Glance 均为 **8192**）。`systemPrompt` 为 `ld([])`（空）。
+
+### 七章的 `dataString`（`th_` 构造，七次相同）
+
+```text
+{ …聚合统计 JSON… }
+
+SESSION SUMMARIES:
+- <brief_summary> (<outcome>, <claude_helpfulness>)
+…
+
+FRICTION DETAILS:
+- <friction_detail>
+…
+
+USER INSTRUCTIONS TO CLAUDE:
+- <user_instructions_to_claude 条目>   // 或字面量 None captured
+```
+
+| 块 | 来源 | 上限 |
+|---|---|---|
+| 聚合 JSON | `sessions` / `analyzed` / `date_range` / `messages` / `hours` / `commits` / `top_tools` / `top_goals` / `outcomes` / `satisfaction` / `friction` / `success` / `languages` 等 | 由 `Msp` 结果序列化 |
+| `SESSION SUMMARIES` | facet map 的 `brief_summary` 等 | **50** |
+| `FRICTION DETAILS` | 非空 `friction_detail` | **20** |
+| `USER INSTRUCTIONS TO CLAUDE` | `user_instructions_to_claude` 摊平 | **15** |
+
+facet map 在 `Osp` 里以 **未按 warmup 过滤** 的完整 `_` 传入 `th_`（`Msp` 用的是过滤后的 `k`/`R`）。纯 `warmup_minimal` 会话仍可能出现在上述采样列表中。采样与过滤细节见机制页 L4。
+
+### At a Glance 的 `dataString`
+
+调用为 `Isp(atAGlanceDescriptor, "")`：模板自身已含 `SESSION DATA:` 与各章 bullet 插值，**`DATA:` 后为空**（通用包装留下的空尾缀，不是第二份数据）。
 
 ---
 
@@ -54,8 +102,8 @@ tags:
 
 | 项 | 内容 |
 |---|---|
-| 触发 | `Km_`：会话文本长度 **> 30000** 时，按 **25000** 切片后对每片调用 |
-| 拼接 | 提示词 + transcript 切片 |
+| 触发 | `Km_`：先 `Gm_(log)` 得到有损投影；投影长度 **> 30000** 时，按 **25000** 切片后对每片调用 |
+| 拼接 | 提示词 + **投影**切片（非原始 JSONL） |
 | options | `querySource: "insights"`，`maxOutputTokensOverride: 500` |
 
 ### 英文原文
@@ -88,8 +136,9 @@ TRANSCRIPT 片段：
 
 ### 说明
 
-- 目的是把超长会话压到可送进 P-facet 的长度；`Km_` 还会在摘要前拼 session 元信息头（session id 前缀、日期、项目、时长、分块数量）。  
-- 「保留文件名/错误信息」是为了后续 friction / summary 仍有可指认细节。
+- 进模型前的文本是 `Gm_` 投影：user 条最多 500 字符、assistant 条最多 300 字符、tool 只留名称；不是磁盘上的完整 transcript。  
+- `Km_` 在投影过长时才分块调用本提示词，并在拼回时加 session 元信息头（id 前缀、日期、项目、时长、分块数量）。  
+- 「保留文件名/错误信息」是为了后续 friction / summary 仍有可指认细节；投影截断本身已可能丢掉后半段细节。
 
 ---
 
@@ -100,7 +149,7 @@ TRANSCRIPT 片段：
 | 项 | 内容 |
 |---|---|
 | 源码绑定 | 模板常量（minify 名 `Fm_`） |
-| 使用 | `Zm_`：`userPrompt = Fm_ + 会话文本(经 Km_) + schema 段` |
+| 使用 | `Zm_`：`userPrompt = Fm_ + Km_(log) 的输出 + schema 段`。`Km_` 先 `Gm_`：短会话为有损投影，长会话为分块摘要拼接（见 P-chunk-sum） |
 | 校验 | `$sp`：必为对象，且 `underlying_goal`/`outcome`/`brief_summary` 为 string；`goal_categories`/`user_satisfaction_counts`/`friction_counts` 为非 null 对象 |
 
 ### 英文原文
@@ -169,7 +218,8 @@ SESSION：
 
 ### 说明
 
-- 与报告引擎过滤衔接：仅 `warmup_minimal` 的 session 会在聚合前被丢掉。  
+- 原文第 4 条写单数 `goal_category`，schema 字段为复数 `goal_categories`；本文保留上游原文，不替其统一。  
+- 与报告引擎衔接：仅 `warmup_minimal` 的 session 会从 **`Msp` 聚合统计**（`k`/`R`）中剔除；`th_` 仍接收未过滤 facet map，故这些 facet 仍可能进入七章的 `SESSION SUMMARIES` 等采样输入。  
 - 满意度/摩擦的 **key 保持英文**，便于 JSON 聚合。  
 - 同文件附近有枚举数组（命令对象旁）：  
   - 满意度相关：`frustrated`, `dissatisfied`, `likely_satisfied`, `satisfied`, `happy`, `unsure`  
@@ -207,16 +257,16 @@ RESPOND WITH ONLY A VALID JSON OBJECT matching this schema:
 ```
 仅用符合下列 schema 的合法 JSON 对象作答：
 {
-  "underlying_goal": "用户 fundamentally 想达成什么",
+  "underlying_goal": "用户最根本想达成什么",
   "goal_categories": {"类别名": 次数, ...},
   "outcome": "fully_achieved|mostly_achieved|partially_achieved|not_achieved|unclear_from_transcript",
   "user_satisfaction_counts": {"档位": 次数, ...},
   "claude_helpfulness": "unhelpful|slightly_helpful|moderately_helpful|very_helpful|essential",
   "session_type": "single_task|multi_task|iterative_refinement|exploration|quick_question",
   "friction_counts": {"摩擦类型": 次数, ...},
-  "friction_detail": "一句描述摩擦，或空",
+  "friction_detail": "用一句话描述摩擦；没有则留空",
   "primary_success": "none|fast_accurate_search|correct_code_edits|good_explanations|proactive_help|multi_file_changes|good_debugging",
-  "brief_summary": "一句：用户想要什么、是否得到"
+  "brief_summary": "用一句话说明用户想达成什么，以及最终是否达成"
 }
 ```
 
@@ -228,6 +278,12 @@ RESPOND WITH ONLY A VALID JSON OBJECT matching this schema:
 - `goal_categories`、`user_satisfaction_counts`、`friction_counts` 为 object 且非 null  
 
 成功后附上 `session_id`。失败返回 `null`（该 session 无新 facet）。
+
+---
+
+## P-section-* · 七章（共用包络）
+
+下列七节是 `eh_` 数组里各章的 **`prompt` 模板**。实际请求还经上文「请求拼装」：模板后接 `DATA:` 与同一份公共 `dataString`；`maxTokens` 均为 **8192**，并行经 `Isp`。
 
 ---
 
@@ -537,7 +593,12 @@ Find something genuinely interesting or amusing from the session summaries.
 
 ### 元信息
 
-在 `th_` 中于其它 section 结果汇总之后调用；提示词内嵌其它章的 bullet 摘要插值。
+| 项 | 内容 |
+|---|---|
+| 调用 | `th_` 在七章 `Promise.all` 之后构造 descriptor，再 `Isp(descriptor, "")` |
+| 与 section 关系 | 复用同一 `Isp` / 同一 `querySource: "insights"` 调用点；**不是**第四个静态调用点 |
+| maxTokens | **8192**（descriptor 字面量；`Isp` 读 `e.maxTokens`） |
+| 数据 | 模板内 `SESSION DATA:` 与各章 bullet 插值；`Isp` 追加的 `DATA:` 后为空字符串 |
 
 ### 英文原文
 
@@ -605,13 +666,13 @@ ${m}
 
 使用四段结构：
 
-1. **What's working** — 用户与 Claude 交互的独特风格，以及做过的有影响力的事？可含一两个细节，但保持高阶（用户记忆可能已淡）。不要空洞吹捧。也不要聚焦他们用了哪些 tool call。
+1. **What's working** — 用户与 Claude 交互的独特风格，以及做过的有影响力的事？可含一两个细节，但保持高阶（用户记忆可能已淡）。不要空洞吹捧。也不要聚焦他们用了哪些工具调用。
 
 2. **What's hindering you** — 拆成 (a) Claude 的问题（误解、错误方法、bug）与 (b) 用户侧摩擦（上下文不足、环境问题——最好比单项目更一般）。诚实但建设性。
 
 3. **Quick wins to try** — 可试用的具体 Claude Code 功能（见下文例子），或真正有吸引力的工作流技巧。（避免「先让 Claude 确认再行动」「先多打字给上下文」这类较弱建议。）
 
-4. **Ambitious workflows for better models** — 未来 3–6 个月模型更强时，他们该准备什么？现在看起来不可能的工作流何时可能？从下文相应章节取材。
+4. **Ambitious workflows for better models** — 未来 3–6 个月模型能力显著提升时，他们该为哪些事做准备？哪些现在看似不可能的工作流将会成为可能？从下文相应章节取材。
 
 每段 2–3 句，别太长。不要压垮用户。不要提下面 session 数据里的具体数字或 underlined_categories。使用教练语气。
 
@@ -623,21 +684,33 @@ ${m}
   "ambitious_workflows": "（见上）"
 }
 
-SESSION DATA：
-（聚合数据）
+SESSION DATA:
+${s}
 
-## Project Areas …
-## Big Wins …
-## Friction Categories …
-## Features to Try …
-## Usage Patterns …
-## On the Horizon …
+## Project Areas（用户从事的工作）
+${c}
+
+## Big Wins（令人印象深刻的成就）
+${u}
+
+## Friction Categories（哪里容易出问题）
+${d}
+
+## Features to Try
+${p}
+
+## Usage Patterns to Adopt
+${f}
+
+## On the Horizon（面向更强模型的进阶工作流）
+${m}
 ```
 
 ### 说明
 
 - 输出四字段供 HTML「At a Glance」与 `getPromptForCommand` 里 markdown 摘要使用。  
-- 明确禁止堆数字，与 meta 统计展示分工：数字在 HTML 图表，glance 做定性教练。
+- 明确禁止堆数字，与 meta 统计展示分工：数字在 HTML 图表，glance 做定性教练。  
+- 经 `Isp` 时模板末尾仍会多一个空的 `DATA:` 标签（见上文「请求拼装」）。
 
 ---
 
@@ -715,7 +788,7 @@ Want to dig into any section or try one of the suggestions?
 ### 说明
 
 - **verbatim** 约束的是用户可见输出；上下文里仍有完整 JSON，便于用户追问某一节。  
-- 分享句英文为产品固定文案，对照页保留英文原句不强行汉化产品 UI 句。
+- `<message>` 内两行英文是运行时用户实际看到的固定文案，故对照块保留英文。语义为：报告已就绪（链为 `${reportUrl}`）；可追问某一节或尝试建议。
 
 ---
 

@@ -32,6 +32,6 @@
 - **SEA（Single Executable Application / 单文件可执行）** —— 「把运行时 + 代码打进一个可执行文件」的统称。本库语境默认指 **Bun SEA**；注意与 Node.js 官方的 SEA 特性区分，别混。
 - **cli.js** —— Claude Code 打包后的主程序 JavaScript（十几 MB 的单文件 bundle），是 Bun SEA 提取和 acorn 补丁的核心目标文件。
 - **slash command（斜杠命令）** —— 用户以 `/` 开头触发的 CLI 内建或扩展命令；本库写「斜杠命令」，标签用 `topic:slash-command`。
-- **/insights** —— Claude Code builtin 斜杠命令：本地分析历史会话并生成 usage 报告 HTML；细节见 mechanisms / concepts 下 insights 相关页。
+- **/insights** —— Claude Code builtin 斜杠命令：本机扫历史会话与缓存，经内部模型调用生成 usage 报告 HTML；细节见 mechanisms / concepts 下 insights 相关页。
 - **usage-data** —— Claude 配置根下存放 `/insights` 产物与缓存的目录名（含 `session-meta/`、`facets/`、`report*.html`）。
 - **facet（会话 facet）** —— `/insights` 对单会话 LLM 抽取的结构化语义标签（目标、满意度、摩擦等），缓存于 `usage-data/facets/`。

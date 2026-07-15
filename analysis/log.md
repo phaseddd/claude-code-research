@@ -11,3 +11,7 @@
 [2026-07-15] concept | /insights 内嵌提示词契约页：P-chunk-sum/P-facet/schema/P-section-*/P-at-a-glance/P-user-reply 英文原文 + 中文对照 | 无
 [2026-07-15] concept | /insights 提示词契约页经维护者确认 → 升 active | 无
 [2026-07-15] mechanism | /insights 机制页扩写：L0–L6 全链路、双缓存/漏斗分步、mermaid+plaintext 图、multi-clauding 30min 窗口等；仍 draft | 无（同页修订）
+[2026-07-15] mechanism | /insights 机制页就地订正：数据边界、Gm_ 投影、warmup 双输入、th_ 50/20/15、collectRemote 死参、平台边界与证据方法；仍 draft | 无（同页修订）
+[2026-07-15] concept | /insights 提示词契约页：P-chunk-sum 改为 Gm_ 投影后再分块，与机制页对齐 | 无（同页修订）
+[2026-07-16] concept | /insights 提示词契约页就地补齐 Isp/DATA/th_ 公共输入与 50/20/15、glance 走 Isp、facet/warmup 口径、两处中文误译；仍 active | 无（同页修订）
+[2026-07-16] mechanism | /insights 机制页就地订正后升 active：数据边界、Gm_、warmup 双输入、50/20/15、mermaid 用 br 换行；与提示词契约页对齐 | 无
