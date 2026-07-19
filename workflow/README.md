@@ -1,15 +1,16 @@
 # workflow/ — 知识库维护流程框架
 
-这个目录是本仓库知识库的**流程框架**（不是知识内容本身）。它规定「每次研究收尾，怎么把结论可靠地沉淀成一个知识页」。
+这个目录是本仓库知识库的**流程框架**（不是知识内容本身）。它规定：研究收尾怎么入库，以及隔一段时间怎么扫库防腐烂。
 
 面向两类读者：
 
 - **人**（维护者）：想知道知识库怎么维护、页面怎么写。
-- **AI**（Claude Code / Codex）：每次会话经由根目录 `CLAUDE.md` / `AGENTS.md` 里的指针被引导到这里，按 `intake.md` 执行入库。
+- **AI**（Claude Code / Codex）：每次会话经由根目录 `CLAUDE.md` / `AGENTS.md` 里的指针被引导到这里；入库走 `intake.md`，定期体检走 `maintenance.md`。
 
 ## 内容
 
-- `intake.md` —— 入库流程本体（每次研究收尾必走的六步，带卡点）。
+- `intake.md` —— 入库流程本体（每次研究收尾必走的六步，带卡点；含冲突复检与 `STALE_SUGGESTION`）。
+- `maintenance.md` —— 定期维护清单（staleness / orphan·死链 / tag↔glossary；与入库分工见该文件）。
 - `schema.md` —— 知识库结构规则（frontmatter 字段、kind、status、tag、命名、可见性）。
 - `templates/` —— 五种页面的空模板（concept / mechanism / case / decision / investigation）。
 
@@ -20,7 +21,8 @@
 
 ## 怎么用
 
-研究收尾时，直接读并执行 `intake.md`。它会一步步把你（或 AI）带着走完选类型、填元信息、查冲突、更新索引、写日志、判定状态。规则细节都在 `schema.md`。
+- **研究收尾入库**：直接读并执行 `intake.md`（选类型 → 填元信息 → 冲突复检/`STALE_SUGGESTION` → 更新索引 → 写日志 → 判定状态）。规则细节在 `schema.md`。
+- **定期扫库**：读并执行 `maintenance.md`（何时跑、三项清单、明确不做的事）。
 
 ## 设计依据
 
