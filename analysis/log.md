@@ -15,3 +15,5 @@
 [2026-07-15] concept | /insights 提示词契约页：P-chunk-sum 改为 Gm_ 投影后再分块，与机制页对齐 | 无（同页修订）
 [2026-07-16] concept | /insights 提示词契约页就地补齐 Isp/DATA/th_ 公共输入与 50/20/15、glance 走 Isp、facet/warmup 口径、两处中文误译；仍 active | 无（同页修订）
 [2026-07-16] mechanism | /insights 机制页就地订正后升 active：数据边界、Gm_、warmup 双输入、50/20/15、mermaid 用 br 换行；与提示词契约页对齐 | 无
+[2026-07-19] mechanism | /insights 机制页：补嵌套/Zxs·shouldQuery、挂载点写入 L2/L4.2(5)(6)/L5；契约页标题改为 p-*（Obsidian 锚点）+ 相对路径链到 P-id | 无（同页修订）
+[2026-07-19] concept | /insights 提示词契约页：索引/请求拼装/各 P-id 节标题改为 p-index、p-request-assembly、p-chunk-sum 等稳定锚点 | 无（同页修订）

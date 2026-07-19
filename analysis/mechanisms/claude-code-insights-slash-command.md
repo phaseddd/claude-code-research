@@ -2,7 +2,7 @@
 title: Claude Code /insights 命令的端到端流程
 kind: mechanism
 status: active
-updated: 2026-07-16
+updated: 2026-07-19
 applies_to: claude-code / @cometix/claude-code 2.1.209
 tags:
   - topic:claude-code
@@ -69,6 +69,8 @@ flowchart TD
 
 下文按 **L0 → L6** 展开；每段末「设计取舍」只写能被源码结构支撑的推断，不写未出现的产品口号。
 
+**调用嵌套（读 L1–L3 时用）**：L0 查出命令对象后，分发层进入 **`Zxs`**（prompt 路径）。`Zxs` **await** `getPromptForCommand`（L3）；L3 内 **await** `Osp`（L4）再 `Nsp`（L5 模板）。`Zxs` 把返回 text 放进 **isMeta** 消息并 **`shouldQuery: true`**，主会话再 query。L1/L2/L3 是外壳套内核，不是三段串联。
+
 ---
 
 ### L0 · 斜杠识别与命令查找
@@ -119,6 +121,8 @@ async getPromptForCommand(e, t) {
 | `normalizeSessionMeta` | `Psp` | session-meta 规范化相关 |
 | `default` | `ph_` | 命令实现对象 |
 
+命令对象是 CLI **内存注册表条目**（分发按 name 查找），不是 API 请求字段，也不是 settings 总开关。用户路径读**包装层**（含 `disableModelInvocation`）。
+
 **设计取舍**
 
 - **为何 `prompt` 而不是 `local`？**  
@@ -128,42 +132,50 @@ async getPromptForCommand(e, t) {
 
 ---
 
-### L2 · prompt 分发：先 await 分析，再 shouldQuery
+### l2
 
-主路径（`await e.getPromptForCommand(...)` 附近）在返回后大致会：
+**L2 · prompt 分发：先 await 分析，再 shouldQuery**
 
-1. 取出 text 块，记 telemetry  
-2. 处理 hooks / allowedTools / attribution 等（通用 prompt 命令逻辑）  
-3. 组装 `messages`（含用户可见命令消息 + **isMeta** 内容）  
-4. **`shouldQuery: true`** → 主会话模型再跑一轮  
+主路径实现函数为 **`Zxs`**（用户 `case "prompt"` 直接 await；`processPromptSlashCommand`/`cxy` 为旁路薄封装）。成功返回时 **`shouldQuery` 恒为 true**：该字段是分发返回值上的布尔，表示「是否再调**主会话**模型」，与 `Osp` 内部的 `querySource:"insights"` 调用无关（内部调用发生在 await `getPromptForCommand` **之内**）。
 
-对 `/insights`：**步骤 1 内部可能很久**（整份 `Osp`）；进度靠 `progressMessage`。主模型本轮读到的是 **已经生成好的** `Nsp` 话术（内含 insights JSON 与 `file://`），不是「请你去分析」的空指令。
+`Zxs` 在 `await e.getPromptForCommand(...)` 返回后大致会：
+
+1. 取出 text 块，记 telemetry / hooks / allowedTools 等  
+2. 组装 `messages`：用户可见命令消息 + **`isMeta: true` 消息（内容 = L3 返回的 text 块）**  
+3. **`shouldQuery: true`** → 上层主会话再 query  
+
+对 `/insights`：步骤 1 内部可能很久（整份 `Osp`）；进度靠 `progressMessage`。
+
+[**P-user-reply**](../concepts/claude-code-insights-prompts.md#p-user-reply) 挂进**主会话**上下文的位置就在本层步骤 2–3（不在 `Osp` 的三次 `hct` 里）：
 
 ```text
-processPrompt 路径（简化）
+L3 返回 [{ type:"text", text: Nsp(...) }]   // 仅拼好字符串
+    │
+    ▼
+Zxs: Ur({ content: blocks, isMeta: true })  // ★ 挂进当前会话 messages
+    │
+    ▼
+shouldQuery: true → 主会话模型读 isMeta → 输出分享句
+```
 
-  ┌─────────────────────────────────────┐
-  │  await getPromptForCommand(args)    │  ← /insights 重活全在这里
-  │    · Osp → HTML + insights          │
-  │    · Nsp → 强制话术 text            │
-  └─────────────────┬───────────────────┘
-                    ▼
-  包装成 messages (含 isMeta)
-                    ▼
-  shouldQuery: true ──► 主模型 query ──► 用户看见分享句
+主模型本轮读到的是**已经生成好的** `Nsp` 全文（insights JSON + `file://` + verbatim 指令），不是「请你去分析」的空指令。原文见契约页 [P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
+
+```text
+Zxs
+  await getPromptForCommand   ← 重活（L3→Osp）
+  messages += isMeta(Nsp)     ← P-user-reply 进主会话
+  shouldQuery: true
 ```
 
 ---
 
 ### L3 · `getPromptForCommand` 实现体
 
-实现逻辑：
-
 ```text
 async getPromptForCommand(/* e */) {
   collectRemote = false                    // let t = !1，写死
   { insights, htmlPath, data, remoteStats }
-      = await Osp({ collectRemote })
+      = await Osp({ collectRemote })       // L4：内部模型全在这里
 
   reportUrl = `file://${htmlPath}`         // 字面拼接；见「已知边界」
 
@@ -179,7 +191,7 @@ async getPromptForCommand(/* e */) {
 
   return [{
     type: "text",
-    text: Nsp({
+    text: Nsp({                            // 只生成字符串；模板正文 ↓
       insightsJson: JSON.stringify(insights, null, 2),
       reportUrl,
       htmlPath,
@@ -191,10 +203,16 @@ async getPromptForCommand(/* e */) {
 }
 ```
 
+模板正文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
+
+L3 **不调**主会话模型、也**不**调 `querySource:"insights"`。  
+- 内部分析提示词：在 **L4.2（5）（6）** 的 `hct.userPrompt` 里挂上。  
+- [P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)：此处由 `Nsp` **拼出**，真正进对话上下文要等 **L2 `Zxs` 的 isMeta + shouldQuery**。
+
 **设计取舍**
 
 - 分析必须在 `getPromptForCommand` 内完成：主模型本轮需要已存在的 `file://` 与 insights JSON。  
-- **`collectRemote` / `remoteStats`**：调用处把 `collectRemote: false` 传入 `Osp`，但 **`Osp` 函数体不读取参数对象**；`remoteStats` 对应函数内未赋值的局部 `let t`，随返回值原样带出。在 2.1.209 此路径上它们是**遗留形参/空槽**，不能据此推断「存在可打开的远程会话收集开关」。
+- **`collectRemote` / `remoteStats`**：调用处写死 `false` 传入，**`Osp` 不读参数对象**；`remoteStats` 对应未赋值局部。2.1.209 此路径上是遗留空槽，不能推断存在可打开的远程收集开关。
 
 ---
 
@@ -339,13 +357,22 @@ keep = (user_message_count >= 2) AND (duration_minutes >= 1)
       text = Km_(transcript)
             · 先 Gm_(log) 做有损投影（见下）
             · 投影长度 ≤ 30000 → 直接用
-            · 否则按 25000 切片，每片 P-chunk-sum（maxTokens 500），再拼回
-      facet = Zm_(text, id)      // P-facet + schema，失败 → null
+            · 否则按 25000 切片 → 每片 zm_(切片)
+      facet = Zm_(text, id)
       if facet → Xm_ 写缓存
   else:
       // 无缓存且本轮没有 transcript（常见：meta 缓存命中未重读）
       // 或名额已满 → 该 session 本轮无 facet
 ```
+
+**提示词挂在哪（本步）** —— 均为**独立内部请求**的 `hct({ userPrompt, querySource:"insights" })`，**不进**用户聊天窗：
+
+| P-id（点开看原文） | 挂载代码 | 何时 |
+|---|---|---|
+| [P-chunk-sum](../concepts/claude-code-insights-prompts.md#p-chunk-sum) | `zm_`：`userPrompt = qm_ + 投影切片`；maxTokens **500** | 投影 >30000，按 25000 切片时 |
+| [P-facet](../concepts/claude-code-insights-prompts.md#p-facet) + [P-facet-schema](../concepts/claude-code-insights-prompts.md#p-facet-schema) | `Zm_`：`userPrompt = Fm_ + schema + 投影`；**4096** | 无可用 facet 缓存、需要新抽时 |
+
+本步只记挂载点；索引总表见契约页 [提示词在链路中的位置](../concepts/claude-code-insights-prompts.md#p-index)。
 
 **`Gm_` 投影规则**（进模型前的会话文本，不是原始 JSONL）：
 
@@ -356,9 +383,9 @@ keep = (user_message_count >= 2) AND (duration_minutes >= 1)
 | assistant text | `[Assistant]:` + 文本，**每条最多 300 字符** |
 | tool_use | 仅 `[Tool: name]`，**不含参数/结果全文** |
 
-`$sp` 校验 facet 对象：`underlying_goal` / `outcome` / `brief_summary` 为 string；`goal_categories` / `user_satisfaction_counts` / `friction_counts` 为非 null object。提示词全文见 concept 页 **P-facet / P-facet-schema**。
+`$sp` 校验 facet：`underlying_goal` / `outcome` / `brief_summary` 为 string；三类 counts 为非 null object。
 
-**设计取舍**：facets **贵且不稳**（依赖模型），与可复算 meta 分目录；单次最多新抽 50，避免首次运行费用爆炸。投影先截断再决定是否 chunk，控制的是**送进模型的文本**，不是磁盘上的原始 transcript 体积。
+**设计取舍**：facets **贵且不稳**，与可复算 meta 分目录；单次最多新抽 50。投影先截断再决定是否 chunk，控的是**送进模型的文本**，不是磁盘 transcript 体积。
 
 ##### （6）聚合 · 报告 section · At a Glance
 
@@ -391,36 +418,32 @@ P = await th_(I, _)    // section 编排：第二个参数是完整 _，不是 R
   | FRICTION DETAILS | **20** | 有 `friction_detail` 的条目 |
   | USER INSTRUCTIONS | **15** | `user_instructions_to_claude` 摊平后的条目 |
 
-  再并行跑 section 数组（各 `maxTokens: 8192`，经 `Isp`）：  
+  再经 **`Isp(descriptor, dataString)`** 并行七章（各 `maxTokens: 8192`）：  
   `project_areas` · `interaction_style` · `what_works` · `friction_analysis` · `suggestions` · `on_the_horizon` · `fun_ending`  
 
-  然后把各章结果压成 bullet，调 **P-at-a-glance** 二次合成四段总览。  
+  七章结果压成 bullet 后，**同一 `Isp`** 再调一次 **P-at-a-glance**。
 
-  提示词全文见 concept 页对应 P-section-* / P-at-a-glance。
+**提示词挂在哪（本步）** —— 仍是内部 `hct`，`querySource:"insights"`（与 chunk/facet 合共 **3** 处字面量）：
+
+```js
+// Isp（section 与 at_a_glance 共用）
+userPrompt = descriptor.prompt + "\n\nDATA:\n" + dataString
+//            ▲ P-section-* 或 P-at-a-glance 模板正文
+//                              ▲ th_ 拼的聚合 JSON + 50/20/15 采样
+//                                （at_a_glance 调用时 dataString 常为 ""）
+```
+
+| P-id | 说明 |
+|---|---|
+| [P-section-*](../concepts/claude-code-insights-prompts.md#p-section)（七章各一） | 经 `Isp` 并行；包络与公共 `DATA:` 见 [请求拼装](../concepts/claude-code-insights-prompts.md#p-request-assembly) |
+| [P-at-a-glance](../concepts/claude-code-insights-prompts.md#p-at-a-glance) | 七章之后，同一 `Isp` 再调一次 |
 
 ```text
-漏斗压缩（上下文与费用）
+漏斗压缩
 
-  磁盘上的会话 log（JSONL 等）
-        │ Gm_（有损投影：截断 + 只留 tool 名）
-        ▼
-  投影文本（≤30000 则直接用；否则 25000 切片）
-        │ Km_ / P-chunk-sum（按需）
-        ▼
-  分块摘要拼接（或未分块的投影）
-        │ Zm_ / P-facet + schema
-        ▼
-  单会话 JSON facet（结构化、可缓存）
-        │ Msp(k, R)          ← 聚合用过滤后集合
-        ▼
-  跨会话聚合统计
-        │ th_(I, _) + 50/20/15 采样  ← section 用完整 facet map
-        │ 7 × P-section（并行）
-        ▼
-  报告各章 JSON
-        │ P-at-a-glance
-        ▼
-  四段总览 + ah_ → HTML
+  transcript → Gm_ 投影 →（按需）zm_ / P-chunk-sum
+        → Zm_ / P-facet → Msp(k,R)
+        → th_ → Isp×7 P-section → Isp P-at-a-glance → ah_ HTML
 ```
 
 ##### （7）写 HTML · 返回
@@ -453,9 +476,9 @@ return {
 | `model` | CallExpression：`Rsp()` / `Om_()` 均 `return sS()` |
 | `sS()` | 优先 `ANTHROPIC_DEFAULT_OPUS_MODEL`，否则 Opus 路由默认（`zBe` / `opus48` 回退） |
 
-`maxOutputTokensOverride`：字面量 **500**、**4096**、以及 section 路径上的 **MemberExpression**（取 section 的 `maxTokens`，数组内为 **8192**）。
+`maxOutputTokensOverride`：chunk **500**、facet **4096**、section/glance 取 descriptor 的 **8192**。
 
-主会话强制话术 **不在** 这三处内部调用里，而走 slash 分发后的主会话 query。
+[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply) **不在**这三处：见 **L2**（isMeta + shouldQuery）与 **L3/L5**（`Nsp` 拼串）。
 
 **设计取舍（L4 汇总）**
 
@@ -470,9 +493,9 @@ return {
 
 ---
 
-### L5 · 主会话强制话术 · `Nsp`
+### L5 · 主会话强制话术 · `Nsp`（[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply) 模板本体）
 
-签名：
+`Nsp` 只是字符串模板（无 IO、无 `hct`）。签名：
 
 ```text
 Nsp({
@@ -490,17 +513,18 @@ Nsp({
 1. 上下文中已有完整 insights JSON 与 At a Glance（用户尚未看到）；  
 2. **整轮回复只能是 `<message>…</message>` 内固定英文分享句**（含 report URL），不得省略行。
 
-全文与中文对照见 concept 页 **P-user-reply**。
+**挂进上下文**：不是在 L5「再调一次模型」。顺序是 **L3 `Nsp` 拼 text → [L2](#l2) `Zxs` isMeta → `shouldQuery` 主会话 query**。  
+原文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
 
-**设计取舍**：重内容在 HTML；聊天窗避免刷屏。模型是否 100% 遵守 verbatim 属运行时行为，静态代码无法证明。
+**设计取舍**：重内容在 HTML；聊天窗避免刷屏。是否 100% verbatim 属运行时，静态不可证。
 
 ---
 
 ### L6 · 用户可见结果与后续
 
-1. 主会话 `shouldQuery` 触发，模型按 P-user-reply 输出分享句。  
-2. 用户打开 `file://…/report-….html`（或 `report.html`）查看 At a Glance、项目领域、摩擦、建议等。  
-3. 同一会话上下文中仍有 insights JSON，用户可继续追问某一节（是否有效取决于主模型与上下文保留，非本页静态可证范围）。
+1. L2 `shouldQuery` 已触发主会话；模型按 isMeta 中的 [P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply) 输出分享句。  
+2. 用户打开 `file://…/report-….html`（或 `report.html`）看 At a Glance、领域、摩擦、建议等。  
+3. 同一会话上下文中仍有 insights JSON，可继续追问（效果取决于上下文是否还在，非本页静态可证）。
 
 ```text
 用户可见 vs 不可见
