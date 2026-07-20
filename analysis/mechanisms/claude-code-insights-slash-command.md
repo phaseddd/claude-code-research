@@ -2,7 +2,7 @@
 title: Claude Code /insights 命令的端到端流程
 kind: mechanism
 status: active
-updated: 2026-07-19
+updated: 2026-07-20
 applies_to: claude-code / @cometix/claude-code 2.1.209
 tags:
   - topic:claude-code
@@ -15,9 +15,14 @@ tags:
 
 ## 一句话结论
 
-`/insights` 是内置的 **`type: "prompt"`** 斜杠命令：先在**本机**扫历史会话、读写缓存，用多轮**内部**模型调用（`querySource: "insights"`）生成 HTML 使用报告，再让**主会话**模型按固定模板输出带 `file://` 的分享句。报告正文在 HTML；聊天窗主要递链接并可继续追问。语义分析走模型 API，不是纯离线。
+`/insights` 是内置的 **`type: "prompt"`** 斜杠命令：先在**本机**扫历史会话、读写缓存，用多轮**内部**模型调用生成 HTML 使用报告，再让**主会话**模型按固定模板输出带 `file://` 的分享句。报告正文在 HTML；聊天窗主要递链接并可继续追问。语义分析走模型 API，不是纯离线。
 
-提示词**原文**见 [内嵌提示词契约](../concepts/claude-code-insights-prompts.md)。本页讲链路；minify 符号集中在文末附录，正文优先用中文职责名。
+读下文先分清两件事：
+
+1. **两套模型**：内部分析（`querySource: "insights"`）写报告；主会话只输出分享句。  
+2. **两类缓存**：**meta** = 可复算统计；**facet** = 模型语义标签。
+
+其余专名见 [本页名词](#本页名词)。提示词**原文**见 [内嵌提示词契约](../concepts/claude-code-insights-prompts.md)。本页讲链路；minify 符号在文末附录，正文优先用中文职责名。
 
 **证据**：`artifacts/2.1.209/.../@cometix/claude-code/cli.js`（`VERSION: "2.1.209"`）。**未做**：执行 `/insights`、打线上 API、读本机隐私报告。
 
@@ -29,8 +34,8 @@ tags:
 |---|---|
 | 用户 | 交互会话中输入 `/insights` |
 | 命令约束（包装层） | 需要工作区；禁止 Skill 工具代调（`disableModelInvocation: true`） |
-| 本地数据 | `projects/` 历史会话；可选已有 `usage-data/` 缓存 |
-| 模型 | ① 内部分析（insights 来源）；② 主会话再答分享句 |
+| 本地数据 | `projects/` 下历史会话；可选已有 `usage-data/` 缓存 |
+| 模型 | ① 内部分析；② 主会话输出分享句 |
 | 证据包 | 上列 `cli.js` |
 
 ---
@@ -61,18 +66,51 @@ flowchart TD
        → （可选）同会话追问某一节
 ```
 
-**调用嵌套**（L1–L3 不是三段平铺）：
+**调用嵌套**（L2 外壳包住 L3；L4 嵌在 L3 里，不是 L0–L6 平铺）：
 
 ```text
 斜杠命中命令
-  → 分发层 await getPromptForCommand        ← L3
+  → 分发层 await getPromptForCommand          ← L3 函数体
         → await 报告引擎（generateUsageReport） ← L4 几乎全部耗时
         → 拼强制话术字符串（buildInsightsResponsePrompt）
   → 把话术放进 isMeta 消息
-  → shouldQuery: true → 主会话再 query        ← L2 外壳
+  → shouldQuery: true → 主会话再 query          ← L2 外壳
 ```
 
-下文 **L0 → L6**；设计取舍只写源码能支撑的推断。核对 minify 名见 [附录 A](#附录-a--符号地图核对-cli-js-用)。
+下文 **L0 → L6**。设计取舍只写源码能支撑的推断。minify 名见 [附录 A](#附录-A)；单次预算见 [附录 B](#附录-B)。
+
+---
+
+### 本页名词
+
+读 L0–L6 前扫一眼。专名按角色分组；数字帽见附录 B，bundle 符号见附录 A。
+
+#### 命令与双模型
+
+| 说法 | 一句话 | 主要在 |
+|---|---|---|
+| `type: "prompt"` | 准备好 messages 后通常还要再问**主会话**；对照 `local` 本机跑完通常不再问 | L1 |
+| 包装层 / 实现体 | 命令表入口 vs 真逻辑；`disableModelInvocation` 等约束多在包装层 | L1 |
+| `getPromptForCommand` | 斜杠命中后 await 的入口；`/insights` 在这里面跑完整报告引擎 | L2–L3 |
+| 报告引擎 | `generateUsageReport`：扫盘 → 缓存 → 内部 LLM → HTML | L3–L4 |
+| 主会话 vs 内部模型 | 聊天窗那次 query vs 引擎内 `querySource: "insights"` 的分析请求 | 全文 |
+| `shouldQuery` | 分发层标志：是否再调**主会话**；与内部 insights 请求无关 | L2 |
+| `isMeta` | 把强制话术挂进上下文；默认不当作用户可见长文刷屏 | L2 / L5 |
+| 强制话术（P-user-reply） | 要求主模型只输出固定分享句 + `file://` 的模板串 | L3 / L5 |
+
+#### 数据与报告流水线
+
+| 说法 | 一句话 | 主要在 |
+|---|---|---|
+| 配置根 · `projects/` · transcript | 配置根下 `projects/` 存历史会话**原始消息日志**（transcript，常为 JSONL） | L4 |
+| `usage-data/` | 缓存与 HTML 报告所在目录 | L4.0 |
+| mtime | 文件**最后修改时间**（modification time）；本页多指 transcript 的 mtime：枚举时按新→旧排序，并用来判断 meta 缓存是否过期 | L4.2(1)(2) |
+| session-meta（meta） | 从 transcript **算出**的统计缓存（时长、工具次数等），**不调模型**；transcript **mtime** 变了则视为过期 | L4.2(2)(3) |
+| facet(s) | 对单会话 **模型抽取**的结构化语义标签（目标、结果、摘要等） | L4.2(5) |
+| 有损投影 · 分块摘要 | 送模型前截断会话文本；过长再经内部 LLM 切片摘要 | L4.2(5) |
+| 质量过滤 · 元会话 | 过短会话丢弃；用于抽 facet 的自举/指令会话也丢弃 | L4.2(3)(4) |
+| warmup · 聚合 · 七章 · 一眼总览 | 纯 warmup 可剔出聚合数字；先跨会话统计，再并行写七章，最后总览 | L4.2(6) |
+| insights JSON | 引擎返回的结构化结果；写入强制话术，并可供同会话追问 | L3 / L5–L6 |
 
 ---
 
@@ -81,13 +119,13 @@ flowchart TD
 输入以 `/` 开头进入斜杠处理，按 **name** 在命令表中查找；`insights` 为 **`source: "builtin"`**。
 
 **入**：原始输入。  
-**出**：命令对象（`type`、`getPromptForCommand`、`progressMessage` 等）。
+**出**：命令对象（`type`、`getPromptForCommand`、进度文案等）。
 
 ---
 
 ### L1 · 命令对象：实现体 + 懒加载包装
 
-acorn 可见两个 `name: "insights"` 字面量。用户路径读的是**包装层**。
+acorn 可见两个 `name: "insights"` 字面量。用户路径走**包装层**（动态加载后再调实现体）。
 
 | 字段 | 实现体 | 包装层（命令表入口） |
 |---|---|---|
@@ -110,7 +148,7 @@ async getPromptForCommand(args, ctx) {
 
 命令对象是 CLI **内存注册表条目**，不是 API 字段，也不是 settings 总开关。
 
-同模块还导出报告相关能力（正文后文用中文称呼，符号见附录）：
+同模块还导出报告相关能力（正文用中文职责名，符号见附录 A）：
 
 | 职责 | 导出名（源码 export） |
 |---|---|
@@ -124,15 +162,16 @@ async getPromptForCommand(args, ctx) {
 
 **设计取舍**
 
-- **`prompt` 而非 `local`**：`local` 本机跑完通常不再问主模型；`prompt` 会组消息并 `shouldQuery: true`，形态是「报告 + 同会话可追问」。  
-- **`disableModelInvocation: true`（仅包装层）**：禁止 Skill/Agent 代调，用户手敲可以；不禁止报告引擎内部调模型。
+- **`prompt` 而非 `local`**：要「报告 + 同会话可追问」，必须组消息并 `shouldQuery: true`。  
+- **`disableModelInvocation: true`（仅包装层）**：禁止 Skill/Agent 代调；不禁止报告引擎内部调模型。
 
 ---
 
-### L2 · prompt 分发：先跑完分析，再决定问不问主模型
+### L2
 
-主路径在 `case "prompt"` 里进入分发函数（实现 minify 见附录）。成功时 **`shouldQuery` 恒为 true**：表示「这批 messages 组好后，是否再调**主会话**模型」。  
-它与报告引擎内部的 insights 请求无关——内部调用发生在 `await getPromptForCommand` **之内**。
+**prompt 分发：先跑完分析，再问主模型**
+
+主路径在 `case "prompt"` 里进入分发函数（minify 名见附录 A）。成功时 **`shouldQuery` 恒为 true**。内部 insights 请求发生在 `await getPromptForCommand` **之内**，与 `shouldQuery` 无关。
 
 返回后大致：
 
@@ -140,9 +179,9 @@ async getPromptForCommand(args, ctx) {
 2. 组装 `messages`：用户可见命令消息 + **`isMeta: true`（内容 = L3 返回的 text）**  
 3. **`shouldQuery: true`** → 主会话 query  
 
-对 `/insights`：第 1 步内部可能很久（整份报告引擎）；进度靠 `progressMessage`。
+对 `/insights`：长等待在 **`await getPromptForCommand`（含整份报告引擎）**，进度靠 `progressMessage`；返回后再走上面 1–3。
 
-[**P-user-reply**](../concepts/claude-code-insights-prompts.md#p-user-reply) **挂进主会话**的位置 = 本层步骤 2–3（不在报告引擎那三次内部请求里）：
+[**P-user-reply**](../concepts/claude-code-insights-prompts.md#p-user-reply) **挂进主会话** = 本层步骤 2–3（不在引擎那三次内部请求里）：
 
 ```text
 L3 返回 [{ type:"text", text: 强制话术字符串 }]
@@ -151,7 +190,7 @@ L3 返回 [{ type:"text", text: 强制话术字符串 }]
     → 主模型读 isMeta → 输出分享句
 ```
 
-主模型读到的是**已经生成好的**话术（含 insights JSON + `file://`），不是「请你去分析」。原文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
+主模型读到的是**已生成**的话术（含 insights JSON + `file://`），不是「请你去分析」。原文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
 
 ---
 
@@ -180,14 +219,15 @@ async getPromptForCommand(/* 参数未使用 */) {
 
 模板正文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
 
-L3 **不调**主会话、也**不**发 `querySource:"insights"`。  
-- 内部分析提示词 → **L4** 各步的内部请求 `userPrompt`  
-- [P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply) → 此处**拼串**，进对话靠 **L2 isMeta + shouldQuery**
+L3 **不调**主会话、也**不**发 `querySource: "insights"`：
+
+- 内部分析提示词 → **L4** 各步内部请求的 `userPrompt`  
+- [P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply) → 此处**拼串**；进对话靠 **L2 的 isMeta + shouldQuery**
 
 **设计取舍**
 
 - 分析必须在 `getPromptForCommand` 内完成：主模型需要已有 `file://` 与 insights JSON。  
-- `collectRemote` / `remoteStats`：调用写死 false，引擎不读该参数；`remoteStats` 恒空——不能推断有远程收集开关。
+- `collectRemote` / `remoteStats`：调用写死 `false`，引擎不读该参数，`remoteStats` 恒空——不能据此推断存在远程收集开关。
 
 ---
 
@@ -195,21 +235,22 @@ L3 **不调**主会话、也**不**发 `querySource:"insights"`。
 
 #### L4.0 磁盘落点
 
-| 含义 | 路径（相对配置根） |
+对象含义见 [本页名词](#本页名词) 的「数据与报告流水线」。此处只标相对**配置根**的路径（常见 `~/.claude`，随环境变）：
+
+| 对象 | 路径 |
 |---|---|
-| 配置根 | 常见 `~/.claude`（随环境变） |
-| 历史会话 | `projects/` |
+| 历史会话（transcript） | `projects/` |
 | 使用数据根 | `usage-data/` |
+| meta 缓存 | `usage-data/session-meta/` |
 | facet 缓存 | `usage-data/facets/` |
-| session-meta 缓存 | `usage-data/session-meta/` |
 | 报告 | `usage-data/report-<时间戳>.html` 与 `report.html` |
 
 ```text
 配置根
-├── projects/…                 会话 transcript
+├── projects/…                 transcript（原始会话日志）
 └── usage-data/
-    ├── session-meta/          可复算统计
-    ├── facets/                模型语义标签
+    ├── session-meta/          meta（可复算统计）
+    ├── facets/                facet（模型语义标签）
     ├── report-….html
     └── report.html
 ```
@@ -253,15 +294,15 @@ flowchart TB
 
 #### L4.2 控制流（与引擎 await 顺序一致）
 
-引擎内大致顺序：**枚举会话 → 读/写 session-meta → 读 transcript → 抽 facets → 聚合与写章节 → 写 HTML**。
+引擎顺序：**枚举会话 → 读/写 meta（统计缓存）→ 读 transcript（原始日志）→ 抽 facets → 聚合与写章节 → 写 HTML**。名词见 [本页名词](#本页名词)。
 
 ##### （1）枚举会话
 
-遍历 `projects/`，收集 sessionId / path / mtime 等，按 mtime 新→旧排序。空目录或失败 → 空列表后续空跑。
+遍历 `projects/`，收集 sessionId / path / mtime 等，按 mtime 新→旧排序。空目录或失败 → 空列表，后续空跑。
 
 ##### （2）session-meta 缓存
 
-确定性统计可复算，用文件 mtime 失效。
+确定性统计可复算；用 transcript 文件 **mtime** 判断是否失效。
 
 | 预算 | 含义 |
 |---|---|
@@ -270,10 +311,10 @@ flowchart TB
 | 刷新 cap 200 | 本轮最多刷新过期 meta |
 
 - 缓存命中且 transcript 未变 → 不读盘  
-- 无缓存 → 新建队列（受 cap）  
-- 过期 → 刷新队列（受 cap）；帽外沿用旧缓存  
+- 无缓存 → 进新建队列（受 cap）  
+- 过期 → 进刷新队列（受 cap）；帽外沿用旧缓存  
 
-**设计取舍**：meta 可复算 → 强缓存；cap 是完整性 vs 时延。
+**设计取舍**：meta 可复算 → 强缓存；cap 权衡完整性与时延。
 
 ##### （3）读 transcript · 写回 meta
 
@@ -281,7 +322,7 @@ flowchart TB
 |---|---|
 | 批大小 10 | 并行读日志 |
 
-- 过滤 facet 自举元会话（前几条 user 含固定 JSON 指令或 `record_facets`）  
+- 过滤**元会话**（facet 自举：前几条 user 含固定 JSON 指令或 `record_facets`）  
 - 非法时间戳跳过  
 - 抽出统计字段（session_id、时长、user 消息数、工具/token/语言等）并写回 session-meta  
 - 读失败可回退旧 meta  
@@ -312,7 +353,7 @@ flowchart TB
 
 | P-id | 挂载 | 何时 |
 |---|---|---|
-| [P-chunk-sum](../concepts/claude-code-insights-prompts.md#p-chunk-sum) | 分块函数：`userPrompt = 模板 + 投影切片`；maxTokens **500** | 投影过长需切片 |
+| [P-chunk-sum](../concepts/claude-code-insights-prompts.md#p-chunk-sum) | 分块：`userPrompt = 模板 + 投影切片`；maxTokens **500** | 投影过长需切片 |
 | [P-facet](../concepts/claude-code-insights-prompts.md#p-facet) + [schema](../concepts/claude-code-insights-prompts.md#p-facet-schema) | 抽 facet：`userPrompt = 指南 + schema + 投影`；**4096** | 无缓存需新抽 |
 
 索引：[提示词在链路中的位置](../concepts/claude-code-insights-prompts.md#p-index)。
@@ -326,14 +367,14 @@ flowchart TB
 | 助手文本 | 每条最多约 300 字符 |
 | 工具 | 只留工具名，不含参数/结果 |
 
-校验 facet：goal / outcome / brief_summary 为 string；三类 counts 为非 null object。
+校验 facet：`goal` / `outcome` / `brief_summary` 为 string；三类 counts 为非 null object。
 
 **设计取舍**：facet 贵且不稳，与 meta 分目录；单次新抽 cap 50。
 
 ##### （6）聚合 · 报告七章 · 一眼总览
 
-- **warmup**：目标类别仅有 `warmup_minimal` 的会话不进**聚合数字**；写章节时用的 facet 表仍是**完整表**（采样列表仍可能见到 warmup，受下面条数帽约束）。  
-- **聚合**：跨会话工具、语言、token、git、满意度/摩擦等；并检测约 **30 分钟**窗口多会话时间重叠。  
+- **warmup**：目标类别仅有 `warmup_minimal` 的会话不进**聚合数字**；写章节用的 facet 表仍是**完整表**（采样列表仍可能见到 warmup，受下表条数帽约束）。  
+- **聚合**：跨会话工具、语言、token、git、满意度/摩擦等；并检测约 **30 分钟**窗口内多会话时间重叠（multi-clauding）。  
 - **写章节前采样**（不是全量 facet 原文）：
 
   | 采样 | 上限 |
@@ -342,9 +383,9 @@ flowchart TB
   | 摩擦细节 | 20 |
   | 用户给 Claude 的指示 | 15 |
 
-- **并行七章**（各 maxTokens 8192），再合成 [P-at-a-glance](../concepts/claude-code-insights-prompts.md#p-at-a-glance)。
+- **并行七章**（各 maxTokens 8192），再合成 [P-at-a-glance](../concepts/claude-code-insights-prompts.md#p-at-a-glance)（一眼总览）。
 
-**提示词挂在哪（本步）** — 仍是内部 `userPrompt`（与上步合共 **3** 处 `querySource:"insights"`）：
+**提示词挂在哪（本步）** — 仍是内部 `userPrompt`（与上步合计 **3** 处 `querySource: "insights"`）：
 
 ```text
 userPrompt = 章节模板 + "\n\nDATA:\n" + 数据串
@@ -371,7 +412,7 @@ transcript → 投影 →（按需）分块摘要 → 抽 facet
 
 [P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply) **不在**这三处 → 见 L2 / L3 / L5。
 
-**L4 设计取舍**：双缓存（可复算 vs 贵）；漏斗多层压缩；批与 cap 限制单次成本；`querySource` 与普通对话分离。
+**L4 设计取舍**：双缓存（meta 可复算 vs facet 贵）；漏斗多层压缩；批与 cap 限制单次成本；`querySource` 与普通对话分离。
 
 ---
 
@@ -379,7 +420,7 @@ transcript → 投影 →（按需）分块摘要 → 抽 facet
 
 `buildInsightsResponsePrompt` 是**纯字符串模板**（无 IO、无内部模型）。填入 insights JSON、`file://`、facets 目录、标题与摘要后，要求主模型**只能**输出 `<message>…</message>` 内固定分享句。
 
-**挂进上下文**：L3 拼串 → [L2](#l2) isMeta → `shouldQuery` 主会话。原文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
+**挂进上下文**：L3 拼串 → [L2](#l2) 的 isMeta → `shouldQuery` 主会话。原文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
 
 **设计取舍**：重内容在 HTML；聊天窗避免刷屏。是否 100% 原样输出属运行时。
 
@@ -448,7 +489,9 @@ transcript → 投影 →（按需）分块摘要 → 抽 facet
 
 ---
 
-## 附录 A · 符号地图（核对 cli.js 用）
+## 附录-A
+
+**符号地图（核对 cli.js 用）**
 
 正文尽量不堆 minify。需要在 bundle 里搜索时对照本表。
 
@@ -476,7 +519,9 @@ transcript → 投影 →（按需）分块摘要 → 抽 facet
 
 ---
 
-## 附录 B · 单次运行预算
+## 附录-B
+
+**单次运行预算**
 
 | 限制什么 | 约值 | 用在哪 |
 |---|---|---|

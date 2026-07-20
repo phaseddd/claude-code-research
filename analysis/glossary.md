@@ -34,4 +34,7 @@
 - **slash command（斜杠命令）** —— 用户以 `/` 开头触发的 CLI 内建或扩展命令；本库写「斜杠命令」，标签用 `topic:slash-command`。
 - **/insights** —— Claude Code builtin 斜杠命令：本机扫历史会话与缓存，经内部模型调用生成 usage 报告 HTML；细节见 mechanisms / concepts 下 insights 相关页。
 - **usage-data** —— Claude 配置根下存放 `/insights` 产物与缓存的目录名（含 `session-meta/`、`facets/`、`report*.html`）。
+- **transcript（会话日志）** —— `projects/` 下单次会话的原始消息流水（常为 JSONL）；`/insights` 统计与语义分析的源数据。
+- **mtime（modification time）** —— 文件最后修改时间。`/insights` 语境下多指 transcript 的 mtime：枚举会话排序，并判断 session-meta 是否过期。
+- **session-meta（meta）** —— `/insights` 从 transcript **算出**的可复算统计缓存（时长、工具次数等），不调模型，目录 `usage-data/session-meta/`；transcript mtime 变了则刷新。
 - **facet（会话 facet）** —— `/insights` 对单会话 LLM 抽取的结构化语义标签（目标、满意度、摩擦等），缓存于 `usage-data/facets/`。

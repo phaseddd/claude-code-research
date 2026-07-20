@@ -18,3 +18,5 @@
 [2026-07-19] mechanism | /insights 机制页：补嵌套/Zxs·shouldQuery、挂载点写入 L2/L4.2(5)(6)/L5；契约页标题改为 p-*（Obsidian 锚点）+ 相对路径链到 P-id | 无（同页修订）
 [2026-07-19] concept | /insights 提示词契约页：索引/请求拼装/各 P-id 节标题改为 p-index、p-request-assembly、p-chunk-sum 等稳定锚点 | 无（同页修订）
 [2026-07-19] mechanism | /insights 正文改为中文职责叙述，minify 退到附录；路径表/漏斗/挂载点去掉 Osp/pn 墙 | 无（同页修订）
+[2026-07-20] mechanism | /insights 机制页：总览后加本页名词（命令外壳 8 + 数据流水线 8）、结论双坐标预热、L4.0 改为路径索引、L4.2 开篇回指；订正 L2 长等待时序 | 无（同页修订）
+[2026-07-20] mechanism | /insights 机制页入库收尾：本页名词补 mtime 独立行、Obsidian 短锚点（本页名词/L2/附录-A|B）、glossary 同步；冲突复检 OK | 无（同页修订）
