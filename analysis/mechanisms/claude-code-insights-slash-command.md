@@ -1,8 +1,8 @@
 ---
-title: Claude Code /insights 命令的端到端流程
+title: Claude Code /insights 命令全程解析
 kind: mechanism
 status: active
-updated: 2026-07-20
+updated: 2026-07-21
 applies_to: claude-code / @cometix/claude-code 2.1.209
 tags:
   - topic:claude-code
@@ -11,528 +11,343 @@ tags:
   - form:mechanism
 ---
 
-# Claude Code `/insights` 命令的端到端流程
+# Claude Code `/insights` 命令：从敲下回车到看见报告，全程发生了什么
 
-## 一句话结论
+你输入 `/insights`，回车。屏幕卡住了。几十秒，可能是几分钟。然后聊天窗弹出两行英文加一个 `file://` 链接。点开链接，浏览器里是一份漂亮的 HTML 报告——告诉你这个月用 Claude 做了什么、哪里顺畅哪里卡壳、甚至还有几条"要不要试试这个功能"的建议。
 
-`/insights` 是内置的 **`type: "prompt"`** 斜杠命令：先在**本机**扫历史会话、读写缓存，用多轮**内部**模型调用生成 HTML 使用报告，再让**主会话**模型按固定模板输出带 `file://` 的分享句。报告正文在 HTML；聊天窗主要递链接并可继续追问。语义分析走模型 API，不是纯离线。
+**这篇文章要回答的就是：在那段等待的时间里，到底发生了什么。**
 
-读下文先分清两件事：
-
-1. **两套模型**：内部分析（`querySource: "insights"`）写报告；主会话只输出分享句。  
-2. **两类缓存**：**meta** = 可复算统计；**facet** = 模型语义标签。
-
-其余专名见 [本页名词](#本页名词)。提示词**原文**见 [内嵌提示词契约](../concepts/claude-code-insights-prompts.md)。本页讲链路；minify 符号在文末附录，正文优先用中文职责名。
-
-**证据**：`artifacts/2.1.209/.../@cometix/claude-code/cli.js`（`VERSION: "2.1.209"`）。**未做**：执行 `/insights`、打线上 API、读本机隐私报告。
+往下读之前只需要先搞懂一件事：整个过程里有两个不同的模型角色。**内部分析请求**负责分析你的历史会话、写 HTML 报告；**主会话模型**就是聊天窗里跟你对话的那位，它只负责把报告链接递到你手上。两者不一定代表不同的模型家族，关键区别在于请求发生的位置和承担的职责：内部分析你看不到，主会话输出你一直看得到。分清这两个角色，后面就一路畅通。
 
 ---
 
-## 输入
-
-| 输入 | 说明 |
-|---|---|
-| 用户 | 交互会话中输入 `/insights` |
-| 命令约束（包装层） | 需要工作区；禁止 Skill 工具代调（`disableModelInvocation: true`） |
-| 本地数据 | `projects/` 下历史会话；可选已有 `usage-data/` 缓存 |
-| 模型 | ① 内部分析；② 主会话输出分享句 |
-| 证据包 | 上列 `cli.js` |
-
----
-
-## 过程
-
-### 总览
+## 俯瞰：一张图讲完全程
 
 ```mermaid
 flowchart TD
-  A["用户输入 /insights"] --> B["斜杠分发<br/>命中 builtin prompt"]
-  B --> C["进度: analyzing your sessions"]
-  C --> D["await getPromptForCommand"]
-  D --> E["报告引擎<br/>扫盘 → 缓存 → 内部 LLM → HTML"]
-  E --> F["拼主会话强制话术"]
-  F --> G["组装 messages<br/>shouldQuery: true"]
-  G --> H["主会话模型 query"]
-  H --> I["固定分享句 + file://"]
-  E --> J["磁盘: report*.html<br/>session-meta / facets"]
+  A["你输入 /insights"] --> B["斜杠分发：命中 builtin 命令"]
+  B --> C["进度提示：analyzing your sessions"]
+  C --> D["报告引擎启动"]
+  D --> E1["枚举所有历史会话"]
+  E1 --> E2["读/写统计缓存（meta）"]
+  E2 --> E3["读原始聊天记录"]
+  E3 --> E4["质量过滤：太短的会话丢掉"]
+  E4 --> E5["内部模型抽取语义标签（facet）"]
+  E5 --> E6["聚合跨会话统计"]
+  E6 --> E7["内部模型并行写报告七章"]
+  E7 --> E8["内部模型合成总览（At a Glance）"]
+  E8 --> E9["写入 HTML 文件到磁盘"]
+  E9 --> F["拼装分享话术，塞进主会话上下文"]
+  F --> G["主会话模型输出固定分享句 + file:// 链接"]
+  G --> H["你点开链接，看到报告"]
 ```
 
-```text
-用户感知
-
-  /insights → 卡住（扫盘 + 可能多次内部模型 + 写 HTML）
-       → 聊天两行英文 + file://
-       → 浏览器打开 HTML
-       → （可选）同会话追问某一节
-```
-
-**调用嵌套**（L2 外壳包住 L3；L4 嵌在 L3 里，不是 L0–L6 平铺）：
-
-```text
-斜杠命中命令
-  → 分发层 await getPromptForCommand          ← L3 函数体
-        → await 报告引擎（generateUsageReport） ← L4 几乎全部耗时
-        → 拼强制话术字符串（buildInsightsResponsePrompt）
-  → 把话术放进 isMeta 消息
-  → shouldQuery: true → 主会话再 query          ← L2 外壳
-```
-
-下文 **L0 → L6**。设计取舍只写源码能支撑的推断。minify 名见 [附录 A](#附录-A)；单次预算见 [附录 B](#附录-B)。
+整个链路分两层：**上面那条（E1 到 E9）** 是报告引擎的工作区，里面既有本地读盘和统计，也有内部模型请求，占用了绝大多数时间；**下面那条（F 到 G）** 才是主会话模型的事。你在聊天窗感受到的长等待，主要发生在报告引擎返回之前。
 
 ---
 
-### 本页名词
+## 分步详解
 
-读 L0–L6 前扫一眼。专名按角色分组；数字帽见附录 B，bundle 符号见附录 A。
+### 第 1 步：斜杠识别
 
-#### 命令与双模型
+Claude Code 的斜杠命令系统是这样工作的：你输入的内容如果以 `/` 开头，就进入命令表查找。`/insights` 是内置命令（`source: "builtin"`），类型为 `"prompt"`。`"prompt"` 类型意味着：命令处理完后，还要再调一次主会话模型来输出结果。与之对应的是 `"local"` 类型（本机跑完直接出结果，不再问模型）。`/insights` 选择 `prompt` 后，实际得到的效果正是"报告已经生成，同时当前会话还能承接追问"；源码没有另外留下文字说明，告诉我们这是否是唯一设计理由。
 
-| 说法 | 一句话 | 主要在 |
-|---|---|---|
-| `type: "prompt"` | 准备好 messages 后通常还要再问**主会话**；对照 `local` 本机跑完通常不再问 | L1 |
-| 包装层 / 实现体 | 命令表入口 vs 真逻辑；`disableModelInvocation` 等约束多在包装层 | L1 |
-| `getPromptForCommand` | 斜杠命中后 await 的入口；`/insights` 在这里面跑完整报告引擎 | L2–L3 |
-| 报告引擎 | `generateUsageReport`：扫盘 → 缓存 → 内部 LLM → HTML | L3–L4 |
-| 主会话 vs 内部模型 | 聊天窗那次 query vs 引擎内 `querySource: "insights"` 的分析请求 | 全文 |
-| `shouldQuery` | 分发层标志：是否再调**主会话**；与内部 insights 请求无关 | L2 |
-| `isMeta` | 把强制话术挂进上下文；默认不当作用户可见长文刷屏 | L2 / L5 |
-| 强制话术（P-user-reply） | 要求主模型只输出固定分享句 + `file://` 的模板串 | L3 / L5 |
+### 第 2 步：命令对象的包装层
 
-#### 数据与报告流水线
+实际上 `insights` 这个命令在源码中有两层定义。用户调用走的是**包装层**——一个带约束条件的入口：
 
-| 说法 | 一句话 | 主要在 |
-|---|---|---|
-| 配置根 · `projects/` · transcript | 配置根下 `projects/` 存历史会话**原始消息日志**（transcript，常为 JSONL） | L4 |
-| `usage-data/` | 缓存与 HTML 报告所在目录 | L4.0 |
-| mtime | 文件**最后修改时间**（modification time）；本页多指 transcript 的 mtime：枚举时按新→旧排序，并用来判断 meta 缓存是否过期 | L4.2(1)(2) |
-| session-meta（meta） | 从 transcript **算出**的统计缓存（时长、工具次数等），**不调模型**；transcript **mtime** 变了则视为过期 | L4.2(2)(3) |
-| facet(s) | 对单会话 **模型抽取**的结构化语义标签（目标、结果、摘要等） | L4.2(5) |
-| 有损投影 · 分块摘要 | 送模型前截断会话文本；过长再经内部 LLM 切片摘要 | L4.2(5) |
-| 质量过滤 · 元会话 | 过短会话丢弃；用于抽 facet 的自举/指令会话也丢弃 | L4.2(3)(4) |
-| warmup · 聚合 · 七章 · 一眼总览 | 纯 warmup 可剔出聚合数字；先跨会话统计，再并行写七章，最后总览 | L4.2(6) |
-| insights JSON | 引擎返回的结构化结果；写入强制话术，并可供同会话追问 | L3 / L5–L6 |
+- `requires: { workspace: true }` —— 必须在一个项目目录里跑
+- `disableModelInvocation: true` —— 禁止 Skill 或子代理代调这个命令
+- `progressMessage: "analyzing your sessions"` —— 就是你在屏幕上看到的那行进度文字
 
----
+包装层做的事很薄：动态加载真正的实现体，然后把参数转发过去。真正的逻辑在实现体的 `getPromptForCommand` 函数里。
 
-### L0 · 斜杠识别
+**一个容易误解的点**：`disableModelInvocation: true` 的意思是"不要让别的 AI 工具代替用户来调用 `/insights`"，**不是**"禁止内部调模型"。报告引擎里的内部模型调用不受这个标志影响。
 
-输入以 `/` 开头进入斜杠处理，按 **name** 在命令表中查找；`insights` 为 **`source: "builtin"`**。
+### 第 3 步：进入 getPromptForCommand —— 报告引擎的入口
 
-**入**：原始输入。  
-**出**：命令对象（`type`、`getPromptForCommand`、进度文案等）。
+这是一个 async 函数，它的核心只有一件事：
 
----
+```
+{ insights, htmlPath, data }
+    = await generateUsageReport()   // 承担几乎全部重活
 
-### L1 · 命令对象：实现体 + 懒加载包装
-
-acorn 可见两个 `name: "insights"` 字面量。用户路径走**包装层**（动态加载后再调实现体）。
-
-| 字段 | 实现体 | 包装层（命令表入口） |
-|---|---|---|
-| `type` | `"prompt"` | `"prompt"` |
-| `source` | `"builtin"` | `"builtin"` |
-| `description` | Generate a report analyzing your Claude Code sessions | 同左 |
-| `progressMessage` | analyzing your sessions | 同左 |
-| `disableModelInvocation` | 无 | **`true`** |
-| `requires` | 无 | **`{ workspace: true }`** |
-| `getPromptForCommand` | 1 参，内联实现 | 2 参，动态加载后转发 |
-
-```text
-// 包装层：动态加载后转发到实现体
-async getPromptForCommand(args, ctx) {
-  const impl = (await dynamicImport(...)).default
-  if (impl.type !== "prompt") throw Error("unreachable")
-  return impl.getPromptForCommand(args, ctx)
-}
+return buildInsightsResponsePrompt({
+    insightsJson, reportUrl, htmlPath, facetsDir, header, summaryText
+})  // 纯字符串拼接
 ```
 
-命令对象是 CLI **内存注册表条目**，不是 API 字段，也不是 settings 总开关。
+`generateUsageReport` 就是报告引擎。这一步承担了整条链路几乎全部重活——我们下一节专门展开它。
 
-同模块还导出报告相关能力（正文用中文职责名，符号见附录 A）：
+`buildInsightsResponsePrompt` 是一个纯字符串模板函数——把引擎产出的 JSON、HTML 路径、摘要等信息填进一个固定模板，生成一段"强制话术"。这段话术之后会告诉主会话模型：你只能说 `<message>` 标签里的那两句话，别自己发挥。它的产品意图是让每次 `/insights` 的可见输出保持一致，最终是否逐字遵从仍取决于模型运行时。
 
-| 职责 | 导出名（源码 export） |
-|---|---|
-| 报告引擎入口 | generateUsageReport |
-| 主会话强制话术模板 | buildInsightsResponsePrompt |
-| 跨会话聚合 | aggregateData |
-| 单会话工具等统计 | extractToolStats |
-| 多会话时间重叠 | detectMultiClauding |
-| 同 session 分支去重 | deduplicateSessionBranches |
-| 命令实现对象 | default |
+### 第 4 步：报告引擎 —— 全篇最重的一步
 
-**设计取舍**
+这是你等待的时间里真正在发生的事情。引擎的逻辑可以概括为八个字：**扫盘 → 缓存 → 分析 → 写报告**。
 
-- **`prompt` 而非 `local`**：要「报告 + 同会话可追问」，必须组消息并 `shouldQuery: true`。  
-- **`disableModelInvocation: true`（仅包装层）**：禁止 Skill/Agent 代调；不禁止报告引擎内部调模型。
+#### 4.1 数据放在哪里
 
----
+引擎读写的本地文件都在你的 Claude Code 配置目录下（通常是 `~/.claude`）：
 
-### L2
-
-**prompt 分发：先跑完分析，再问主模型**
-
-主路径在 `case "prompt"` 里进入分发函数（minify 名见附录 A）。成功时 **`shouldQuery` 恒为 true**。内部 insights 请求发生在 `await getPromptForCommand` **之内**，与 `shouldQuery` 无关。
-
-返回后大致：
-
-1. 取出 text 块；处理 hooks / 工具权限等  
-2. 组装 `messages`：用户可见命令消息 + **`isMeta: true`（内容 = L3 返回的 text）**  
-3. **`shouldQuery: true`** → 主会话 query  
-
-对 `/insights`：长等待在 **`await getPromptForCommand`（含整份报告引擎）**，进度靠 `progressMessage`；返回后再走上面 1–3。
-
-[**P-user-reply**](../concepts/claude-code-insights-prompts.md#p-user-reply) **挂进主会话** = 本层步骤 2–3（不在引擎那三次内部请求里）：
-
-```text
-L3 返回 [{ type:"text", text: 强制话术字符串 }]
-    → 分发层 isMeta 消息          ★ 挂进当前会话
-    → shouldQuery: true
-    → 主模型读 isMeta → 输出分享句
 ```
-
-主模型读到的是**已生成**的话术（含 insights JSON + `file://`），不是「请你去分析」。原文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
-
----
-
-### L3 · `getPromptForCommand` 实现体
-
-```text
-async getPromptForCommand(/* 参数未使用 */) {
-  collectRemote = false   // 写死
-
-  { insights, htmlPath, data, remoteStats }
-      = await generateUsageReport({ collectRemote })   // L4
-
-  reportUrl = "file://" + htmlPath
-  // statsLine、summaryText（at_a_glance 四段 markdown）、header …
-
-  return [{
-    type: "text",
-    text: buildInsightsResponsePrompt({
-      insightsJson, reportUrl, htmlPath,
-      facetsDir,    // usage-data/facets
-      header, summaryText,
-    }),
-  }]
-}
-```
-
-模板正文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
-
-L3 **不调**主会话、也**不**发 `querySource: "insights"`：
-
-- 内部分析提示词 → **L4** 各步内部请求的 `userPrompt`  
-- [P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply) → 此处**拼串**；进对话靠 **L2 的 isMeta + shouldQuery**
-
-**设计取舍**
-
-- 分析必须在 `getPromptForCommand` 内完成：主模型需要已有 `file://` 与 insights JSON。  
-- `collectRemote` / `remoteStats`：调用写死 `false`，引擎不读该参数，`remoteStats` 恒空——不能据此推断存在远程收集开关。
-
----
-
-### L4 · 报告引擎（generateUsageReport）
-
-#### L4.0 磁盘落点
-
-对象含义见 [本页名词](#本页名词) 的「数据与报告流水线」。此处只标相对**配置根**的路径（常见 `~/.claude`，随环境变）：
-
-| 对象 | 路径 |
-|---|---|
-| 历史会话（transcript） | `projects/` |
-| 使用数据根 | `usage-data/` |
-| meta 缓存 | `usage-data/session-meta/` |
-| facet 缓存 | `usage-data/facets/` |
-| 报告 | `usage-data/report-<时间戳>.html` 与 `report.html` |
-
-```text
-配置根
-├── projects/…                 transcript（原始会话日志）
+配置根目录
+├── projects/                     ← 历史会话的原始消息日志（JSONL）
 └── usage-data/
-    ├── session-meta/          meta（可复算统计）
-    ├── facets/                facet（模型语义标签）
-    ├── report-….html
-    └── report.html
+    ├── session-meta/             ← meta 缓存：从聊天记录算出来的统计数字
+    ├── facets/                   ← facet 缓存：内部模型给每个会话打的语义标签
+    ├── report-<时间戳>.html      ← 带时间戳的报告副本
+    └── report.html               ← 最新报告（每次覆盖）
 ```
 
-（路径 helpers 的 minify 名见附录 A。）
+`projects/` 里存的是你每一次跟 Claude 对话的完整记录——每一条你发的消息、Claude 的回复、工具调用、文件修改，全在 JSONL 文件里。报告引擎把这些原始数据一层层压缩、分析，最终变成 HTML 报告。
 
-#### L4.1 数据漏斗
+#### 4.2 同样重要的：两类缓存
 
-```mermaid
-flowchart TB
-  subgraph src [源]
-    P["projects 会话"]
-  end
-  subgraph cache [缓存]
-    SM["session-meta"]
-    FC["facets"]
-  end
-  subgraph filter [过滤]
-    F1["丢弃元会话"]
-    F2["消息≥2 且 时长≥1 分钟"]
-    F3["聚合侧去掉纯 warmup"]
-  end
-  subgraph llm [内部 LLM · insights]
-    G0["有损投影"]
-    C["分块摘要"]
-    F["抽 facet"]
-    S["七章并行"]
-    G["一眼总览"]
-  end
-  subgraph out [输出]
-    H["report*.html"]
-    R["insights + 路径 + 统计"]
-  end
-  P --> SM
-  P --> F1 --> F2
-  F2 --> FC
-  FC --> G0 --> C --> F
-  F --> F3 --> S --> G --> H --> R
-  SM --> F2
-```
+`/insights` 每次运行都要面对你所有的历史聊天记录。但聊天记录可能很多——几百个会话、几十万条消息。每次都从头读一遍太慢了。所以引擎在 `usage-data/` 下维护了两类缓存：
 
-#### L4.2 控制流（与引擎 await 顺序一致）
+**meta（统计缓存）**——存的是"算得出来"的东西。比如这个会话聊了多久、用了多少次工具、涉及哪些编程语言、消耗了多少 token。在同一版本的提取逻辑下，这些数字由聊天记录文件确定；只要文件没变（通过最后修改时间判断），已有 meta 就可以复用。引擎单次运行最多新建 200 条、刷新 200 条 meta。
 
-引擎顺序：**枚举会话 → 读/写 meta（统计缓存）→ 读 transcript（原始日志）→ 抽 facets → 聚合与写章节 → 写 HTML**。名词见 [本页名词](#本页名词)。
+**facet（语义标签缓存）**——存的是"模型才能判断"的东西。比如这个会话的核心目标是什么、用户满意度怎样、遇到了什么类型的摩擦。这些判断依赖模型推理，不是纯计算能得出的。模型请求会消耗 token 和调用资源，每次结果也可能略有不同，输出格式还可能校验失败——所以 facet 的缓存策略比 meta 保守得多：单次运行最多新抽 50 个会话的 facet。
 
-##### （1）枚举会话
+**为什么分成两类？** 因为成本和确定性截然不同。meta 纯计算 → 不需要模型请求 → 可以积极复用。facet 靠模型 → 每次都要消耗 token 和调用资源 → 保守缓存，按需新抽。分开存放意味着 meta 缓存更新不会误伤 facet 缓存，反过来也一样。
 
-遍历 `projects/`，收集 sessionId / path / mtime 等，按 mtime 新→旧排序。空目录或失败 → 空列表，后续空跑。
+#### 4.3 引擎内部的控制流
 
-##### （2）session-meta 缓存
+下面是引擎每一步的具体动作。
 
-确定性统计可复算；用 transcript 文件 **mtime** 判断是否失效。
+**第一步：枚举会话。** 遍历 `projects/` 目录，收集所有 session ID、文件路径、最后修改时间，按时间从新到旧排序。如果目录为空（比如你从来没聊过天），就空跑退出。
 
-| 预算 | 含义 |
+**第二步：读/写 meta 缓存。** 引擎以 50 个一批并行检查每个会话的 meta 缓存是否仍然有效：如果聊天记录文件自上次缓存之后修改时间未变，就直接复用旧缓存；如果变了或从来没缓存过，就标记为"需要重新计算"。
+
+**第三步：读原始聊天记录，写回 meta。** 对每个需要重新计算的会话，以 10 个一批并行读取原始 JSONL 日志。读的过程中同时做几件事：
+
+- 丢弃"元会话"——这不是你跟 Claude 的正常对话，而是 `/insights` 内部用来做 facet 自举的特殊会话（消息内容包含固定的 JSON 指令或 `record_facets` 关键字）
+- 跳过时间戳非法的记录
+- 从消息日志中提取统计字段：会话时长、你发了几条消息、Claude 用了多少次工具、涉及哪些编程语言、token 消耗量等
+- 把提取结果写回 `session-meta/` 目录
+
+**关键细节：只有"需要重新计算"的会话才会在这一步被读盘。** 如果某个会话的 meta 缓存命中（聊天记录没变），这一步就不会为它打开文件。这也意味着缓存命中的会话在这一轮**没有机会**新抽 facet——因为后面抽 facet 需要的是从聊天记录投影出来的文本，而投影的前提是读了盘。
+
+**第四步：质量过滤。** 不是所有会话都值得分析。同时满足以下两个条件的会话才会进入后续流程：
+
+- 你发的消息数 ≥ 2 条
+- 对话时长 ≥ 1 分钟
+
+只发了一条消息就关掉的窗口、或者开了几十秒就退出的对话，不会进入 facet 抽取和报告生成。太短的会话没有足够的信息量，分析出来也不会有什么价值。
+
+**第五步：抽取 facet（语义标签）。** 这是内部模型进入单会话语义分析的核心环节。facet 是引擎对每个会话的"结构化理解"——用 JSON 描述这个会话的根本目标是什么、用户是否满意、有没有遇到摩擦、属于哪种会话类型。如果会话投影过长，内部模型会在正式抽 facet 之前先出场做分块摘要。
+
+实现没有把聊天记录的原始 JSONL 直接交给内部模型。原始日志可能很大，也包含许多当前分析不需要的内容（完整的工具调用参数、文件 diff、系统消息……）。所以引擎先做一次**有损投影**，把冗长的原始记录压成模型更容易消费的简明文本：
+
+| 信息来源 | 投影规则 |
 |---|---|
-| 批大小 50 | 并行检查缓存 |
-| 新建 cap 200 | 本轮最多新建 meta 条数 |
-| 刷新 cap 200 | 本轮最多刷新过期 meta |
+| 会话头 | 保留 session ID 前缀、日期、项目名、总时长 |
+| 你的消息 | 每条最多保留约 500 个字符 |
+| 助手的文本回复 | 每条最多保留约 300 个字符 |
+| 工具调用 | 只保留工具名称，丢弃参数和返回值 |
 
-- 缓存命中且 transcript 未变 → 不读盘  
-- 无缓存 → 进新建队列（受 cap）  
-- 过期 → 进刷新队列（受 cap）；帽外沿用旧缓存  
+投影后如果文本还是太长（超过 30000 字符），就把投影切成每片约 25000 字符的块，先对每块调内部模型做摘要（输出上限 500 token），再把所有摘要拼接起来。这样即使原始会话很大，进入 facet 抽取阶段的输入也会比原始日志更受控。
 
-**设计取舍**：meta 可复算 → 强缓存；cap 权衡完整性与时延。
+facet 抽取本身：把投影（或分块摘要的拼接）作为 `userPrompt`，附上详细的指令和 JSON Schema，让内部模型输出结构化的 JSON。单次运行最多新抽 50 个会话的 facet，以 50 个一批并行。
 
-##### （3）读 transcript · 写回 meta
+**第六步：聚合与并行写七章。** 有了所有会话的 meta 和 facet 之后，引擎做两件事：
 
-| 预算 | 含义 |
+1. **跨会话聚合**：统计你用了多少次各种工具、涉猎了哪些语言、各目标类别的分布、满意度/摩擦的整体面貌、是否在多个会话间同时工作（30 分钟窗口内的会话时间重叠检测）。其中，被 facet 标记为"纯热身"（`warmup_minimal`）的会话会从聚合数字中剔除，确保数据不被无实质内容的会话拉偏——但这不妨碍它们出现在报告章节的采样列表中。
+
+2. **并行生成七章报告**：把聚合统计打包成一份公共数据串，同时对七个章节各调一次内部模型。每章有独立的提示词模板，但共享同一份数据。每章的输出上限均为 8192 token。七章**全部并行**发出——不是一章一章排队等。
+
+| 章节 | 内容 |
 |---|---|
-| 批大小 10 | 并行读日志 |
+| 工作领域 | 你在哪些项目/方向上使用 Claude Code |
+| 交互风格 | 你是怎么跟 Claude 交流的——快节奏迭代还是提前写好详细指令 |
+| 做得好的地方 | 你的工作流中哪些模式效果显著 |
+| 摩擦分析 | 哪些地方经常出问题——是 Claude 理解错了，还是环境配置的锅 |
+| 改进建议 | 基于你的使用模式，推荐哪些 Claude Code 功能（含具体命令和配置） |
+| 前瞻机会 | 模型能力提升后，你可以尝试的大胆工作流 |
+| 结尾彩蛋 | 从采样后的会话材料中找一个有趣或意外的瞬间 |
 
-- 过滤**元会话**（facet 自举：前几条 user 含固定 JSON 指令或 `record_facets`）  
-- 非法时间戳跳过  
-- 抽出统计字段（session_id、时长、user 消息数、工具/token/语言等）并写回 session-meta  
-- 读失败可回退旧 meta  
+**第七步：合成总览（At a Glance）。** 七章全部返回后，引擎把各章结果作为上下文，再调一次内部模型，生成一个四段式的总览：
 
-仅「新建/刷新」队列会读盘；纯缓存命中本轮**没有** transcript 句柄 → 后面无法新抽 facet。
+1. **What's working** —— 你的独特交互方式和亮点
+2. **What's hindering you** —— 阻碍你效率的因素（分清是 Claude 理解错了，还是你侧有可改进的习惯）
+3. **Quick wins to try** —— 现在就可以试的具体建议
+4. **Ambitious workflows** —— 面向更强模型的前瞻规划
 
-##### （4）质量过滤
+总览使用教练式的语气，不堆数字，定性而非定量。数字留给 HTML 里的图表；总览负责给你方向感。
 
-同时满足才继续：用户消息数 ≥ **2**，时长 ≥ **1** 分钟。
+**第八步：写 HTML，返回结果。** 把七章 JSON、总览 JSON、聚合统计一起喂给 HTML 渲染函数，写出两个文件：`report-<时间戳>.html` 和 `report.html`。文件权限设置为 Unix 0600（只有你能读，Windows 上的落实方式可能不同）。引擎返回结构化的 insights JSON、HTML 文件路径、facets 目录路径等，供上层使用。
 
-##### （5）facets（语义标签）
+#### 4.4 内部模型调用的共同特征
 
-| 预算 | 含义 |
-|---|---|
-| 新抽 cap 50 | 本轮最多新抽 session 数 |
-| 新抽批 50 | 并行 |
-| 投影 30000 / 切片 25000 | 过长则分块摘要 |
-| 输出上限 500 / 4096 | 分块摘要 / 抽 facet |
+源码中有三处 `querySource: "insights"` 的内部模型**调用点**：分块摘要、facet 抽取，以及七章/总览共用的章节请求函数。这里的"三处"不是"一次运行只请求三次"——实际请求次数由数据决定：一个超长会话可能产生多个分块摘要请求，多个待分析会话会各自产生 facet 请求，而最后一处调用点会先并行写七章，再额外写一次总览。
 
-```text
-有合法缓存 → 用缓存
-否则若本轮仍有 transcript 且名额未满：
-  有损投影 →（过长则分块摘要）→ 抽 facet → 写缓存
-否则本轮无 facet
+这三处调用点共享一些默认选项：
+
+- 均为 `isNonInteractiveSession: true` —— 这不是交互式对话
+- system prompt 均为空数组 —— 所有指令都在 user prompt 里
+- 不使用 MCP 工具
+- 模型路由走默认的 Opus 辅助逻辑
+
+也就是说，内部模型每次拿到的东西就是"一段指令 + 一段数据"，不需要额外的系统角色约束，也不需要外部工具能力。
+
+### 第 5 步：拼装主会话话术
+
+报告引擎返回后，`getPromptForCommand` 把返回的 insights JSON、`file://` 路径、facets 目录、总览摘要等信息填入 `buildInsightsResponsePrompt`。这个函数生成一段长字符串，核心结构是：
+
+```
+用户刚跑了 /insights，以下是完整 insights 数据：[JSON 数据...]
+
+报告 URL：[file://...]
+HTML 文件：[本地路径]
+Facets 目录：[本地路径]
+
+总览摘要（仅供你参考，用户还没看到任何输出）：[At a Glance markdown]
+
+将 <message> 标签之间的文本原样作为你的完整回复输出。不要省略任何一行：
+
+<message>
+Your shareable insights report is ready: [file:// 链接]
+Want to dig into any section or try one of the suggestions?
+</message>
 ```
 
-**提示词挂在哪（本步）** — 内部请求的 `userPrompt`，**不进聊天窗**：
+这段话里包含了完整的 insights JSON——不是给用户看的，是给主会话模型的**上下文养料**。这样你在看到报告链接后，如果马上追问"摩擦分析那章再详细说说"，主会话模型通常可以直接从仍在当前上下文里的 JSON 数据回答，而不需要重新跑一遍 `/insights`。如果后续对话很长、上下文被压缩或淘汰，这份数据不保证永久可用。
 
-| P-id | 挂载 | 何时 |
-|---|---|---|
-| [P-chunk-sum](../concepts/claude-code-insights-prompts.md#p-chunk-sum) | 分块：`userPrompt = 模板 + 投影切片`；maxTokens **500** | 投影过长需切片 |
-| [P-facet](../concepts/claude-code-insights-prompts.md#p-facet) + [schema](../concepts/claude-code-insights-prompts.md#p-facet-schema) | 抽 facet：`userPrompt = 指南 + schema + 投影`；**4096** | 无缓存需新抽 |
+### 第 6 步：主会话输出
 
-索引：[提示词在链路中的位置](../concepts/claude-code-insights-prompts.md#p-index)。
+`getPromptForCommand` 返回后，斜杠分发层把这段文本以 `isMeta: true` 的方式挂进当前会话的上下文。`isMeta` 的意思是：这段内容是给模型看的上下文，默认不在聊天窗展示为一条长消息。然后分发层设置 `shouldQuery: true`，让主会话模型再做一次 query。
 
-**有损投影**（进模型的不是原始 JSONL）：
+主会话模型读到 `isMeta` 里的强制话术（特别是 `<message>` 标签），被要求**原样**输出那两行英文：一个 `file://` 链接加一句"想深入了解某一节或试试建议吗？"。这是模板规定的目标输出，不是程序绕过模型后直接打印的硬编码结果。
 
-| 来源 | 规则 |
-|---|---|
-| 头 | session 前缀、日期、项目、时长 |
-| 用户 | 每条最多约 500 字符 |
-| 助手文本 | 每条最多约 300 字符 |
-| 工具 | 只留工具名，不含参数/结果 |
-
-校验 facet：`goal` / `outcome` / `brief_summary` 为 string；三类 counts 为非 null object。
-
-**设计取舍**：facet 贵且不稳，与 meta 分目录；单次新抽 cap 50。
-
-##### （6）聚合 · 报告七章 · 一眼总览
-
-- **warmup**：目标类别仅有 `warmup_minimal` 的会话不进**聚合数字**；写章节用的 facet 表仍是**完整表**（采样列表仍可能见到 warmup，受下表条数帽约束）。  
-- **聚合**：跨会话工具、语言、token、git、满意度/摩擦等；并检测约 **30 分钟**窗口内多会话时间重叠（multi-clauding）。  
-- **写章节前采样**（不是全量 facet 原文）：
-
-  | 采样 | 上限 |
-  |---|---|
-  | 会话摘要 | 50 |
-  | 摩擦细节 | 20 |
-  | 用户给 Claude 的指示 | 15 |
-
-- **并行七章**（各 maxTokens 8192），再合成 [P-at-a-glance](../concepts/claude-code-insights-prompts.md#p-at-a-glance)（一眼总览）。
-
-**提示词挂在哪（本步）** — 仍是内部 `userPrompt`（与上步合计 **3** 处 `querySource: "insights"`）：
-
-```text
-userPrompt = 章节模板 + "\n\nDATA:\n" + 数据串
-// 七章与 glance 共用同一请求拼装函数；glance 时数据串常为空
-```
-
-| P-id | 说明 |
-|---|---|
-| [P-section-*](../concepts/claude-code-insights-prompts.md#p-section) | 七章并行；[请求拼装](../concepts/claude-code-insights-prompts.md#p-request-assembly) |
-| [P-at-a-glance](../concepts/claude-code-insights-prompts.md#p-at-a-glance) | 七章之后再调一次 |
-
-```text
-transcript → 投影 →（按需）分块摘要 → 抽 facet
-  → 聚合 → 采样 → 七章 → 一眼总览 → 渲染 HTML
-```
-
-##### （7）写 HTML · 返回
-
-写入带时间戳的报告与 `report.html`（权限字面量 384 = Unix 0600 意图）。返回 insights、html 路径、聚合统计等；远程统计槽位恒空。
-
-#### L4.3 内部模型公共选项
-
-三处 insights 调用共性：`isNonInteractiveSession: true`、空 system、无 MCP 工具列表、模型走默认 Opus 路由辅助。输出上限：分块 500、facet 4096、章节/总览 8192。
-
-[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply) **不在**这三处 → 见 L2 / L3 / L5。
-
-**L4 设计取舍**：双缓存（meta 可复算 vs facet 贵）；漏斗多层压缩；批与 cap 限制单次成本；`querySource` 与普通对话分离。
-
----
-
-### L5 · 主会话强制话术（[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)）
-
-`buildInsightsResponsePrompt` 是**纯字符串模板**（无 IO、无内部模型）。填入 insights JSON、`file://`、facets 目录、标题与摘要后，要求主模型**只能**输出 `<message>…</message>` 内固定分享句。
-
-**挂进上下文**：L3 拼串 → [L2](#l2) 的 isMeta → `shouldQuery` 主会话。原文：[P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply)。
-
-**设计取舍**：重内容在 HTML；聊天窗避免刷屏。是否 100% 原样输出属运行时。
-
----
-
-### L6 · 用户可见结果
-
-1. 主会话按 isMeta 中的 [P-user-reply](../concepts/claude-code-insights-prompts.md#p-user-reply) 输出分享句。  
-2. 浏览器打开 HTML 报告。  
-3. 同会话上下文中仍有 insights JSON，可追问（取决于上下文是否还在）。
-
-```text
-可见     分享句 + file:// ；HTML 正文
-默认不展示 isMeta 中的 insights 全文
-磁盘     session-meta / facets
-后端     投影与内部 insights 请求
-```
-
----
-
-## 输出
+### 第 7 步：你最终看到的结果
 
 | 通道 | 内容 |
 |---|---|
-| 磁盘 | `report-*.html`、`report.html`；更新后的缓存目录 |
-| 聊天 | 固定分享句 + `file://` |
-| 主会话上下文 | insights JSON + 摘要（供追问） |
-| 内部模型 | 分块 / facet / 七章与总览 |
+| 聊天窗 | 两行英文分享句 + `file://` 链接 |
+| 浏览器（点开链接后） | 完整 HTML 报告：图表、七章分析、总览、建议 |
+| 磁盘 | `report-*.html`、`report.html`、更新后的 `session-meta/` 和 `facets/` 缓存 |
+| 主会话上下文 | 完整的 insights JSON（供你追问某一节时使用） |
 
 ---
 
-## 已知边界
+## 设计上为什么这么做
 
-| 边界 | 说明 |
+下面先以源码中能验证的结构为基础，再讨论它可能带来的工程收益。凡是涉及"为什么这样设计"，都应当读作基于实现的合理推断，而不是源码作者留下的官方设计说明。
+
+**为什么把内部分析和主会话输出拆成两个角色？** 源码能确认的是：批量分析在 `getPromptForCommand` 返回前完成，主会话只在报告已经生成后再 query 一次。这样拆分的直接效果，是把"扫历史、抽标签、写章节"和"在当前聊天里递链接、承接追问"隔离开。由此可以合理推测，设计者希望报告生成不依赖主会话临场组织整篇内容，同时又保留同一会话继续追问的体验。
+
+**为什么 meta 和 facet 分开缓存？** 因为成本和确定性不同。meta 在同一版本逻辑下可由 transcript 重算，缓存有效性还能直接绑定文件修改时间；facet 则依赖模型语义分析，会消耗调用资源，也可能出现结果波动或格式校验失败。分开存放让两类数据可以采用不同的失效与数量策略，更新 meta 时也不必连带重做 facet。
+
+**为什么单次运行有各种数量上限？** `/insights` 的报告引擎位于你输入命令后的等待路径上。没有上限时，历史会话越多，本轮工作量就可能越不可控。源码没有写下设计说明，但这些 cap 的实际效果很清楚：它们用覆盖率换取单次运行的成本和等待时间。缓存会跨运行保留，因此本轮没有进入新建或新抽名额的会话，后续运行仍有机会被处理；这不等于每一份报告都会覆盖全部历史。
+
+**为什么报告正文在 HTML 而不是聊天窗？** 因为聊天窗不适合展示复杂排版——图表、分栏、色彩编码的摩擦分类，这些在 HTML 里很容易，在纯文本里很痛苦。把重内容放在 HTML、聊天窗只放链接，是务实的工程选择。
+
+**为什么强制主会话模型只说两句话？** 如果没有强制话术，主会话模型可能会热情地把整个报告总结一遍，刷满你的屏幕——这会让你困惑（"到底看聊天窗还是看 HTML？"），也可能让模型的解读和 HTML 里的呈现产生不一致。固定话术的效果是尽量收紧可见输出，把真正的信息量留给 HTML；它提高了一致性，但不是脱离模型遵从度的硬保证。
+
+---
+
+## 对你而言意味着什么
+
+**数据边界方面**：这条路径不会把原始 JSONL 原封不动地交给内部模型，而是先做有损投影：截断用户和助手文本，只保留工具名称，必要时再分块摘要。但投影后的内容仍会发送给你当前配置所使用的模型后端；它仍然可能包含文件名、错误信息、业务语义或其他敏感片段。报告 HTML 和缓存写在本地，不代表整个分析过程是纯离线的。
+
+**性能方面**：在缓存为空且历史会话较多时，第一次运行通常最慢，因为它需要新建 meta，并可能给最多 50 个会话新抽 facet。之后的运行可以复用缓存，往往更快；但如果最近新增或修改了很多会话，仍可能触发一批新的读盘、统计和 facet 请求。
+
+**数据持久性方面**：`session-meta/` 和 `facets/` 是增量缓存，源码没有展示一套随 transcript 删除而同步清理孤立文件的流程。如果你删了 `projects/` 下的聊天记录，对应缓存文件可能仍留在磁盘上；由于本轮会话清单从 `projects/` 重新枚举，这类孤立缓存通常不会继续进入当前报告，但也不能指望 mtime 检查替你删除它。mtime 失效判断只适用于源 transcript 仍然存在、可以比较修改时间的会话。
+
+---
+
+## 已知的局限
+
+| 局限 | 说明 |
 |---|---|
-| 版本 | 锚定 2.1.209；minify 名与批大小会变 |
-| 数据 | HTML/缓存本机；语义文本经模型 API |
-| 远程收集 | 写死关闭；无可用开关 |
-| `file://` | 路径直接拼接；Windows 可点开性未实测 |
-| 文件权限字面量 | Unix 0600 意图；Windows 落实不同 |
-| 覆盖 | meta/facet 有 cap；章节采样有上限——预算样本 |
-| 失败 | 单次 facet/章节失败多跳过 |
-| 提示词正本 | 仅 [契约页](../concepts/claude-code-insights-prompts.md) |
+| 版本锁定 | 以上分析基于 `@cometix/claude-code` 2.1.209 版本。minify 后的函数名、批大小、cap 值等细节会随版本变化 |
+| 远程收集 | 源码中将远程数据收集标志写死为 `false`，`remoteStats` 恒为空——但这不代表未来版本不会改变 |
+| `file://` 链接 | Windows 上点击 `file://` 链接能否直接在浏览器中打开 HTML，取决于系统配置和浏览器安全策略，未实测 |
+| 报告权限 | HTML 文件的权限字面量为 Unix 0600 意图。Windows 对此的落实方式不同，不应假设 Windows 下该文件也严格仅限当前用户可读 |
+| 采样有上限 | 七章所用的会话摘要采样上限为 50 条、摩擦详情 20 条、用户指示 15 条。如果你有大量会话，报告可能不覆盖全部 |
+| 单点失败 | 单个 facet 抽取失败或单个章节生成失败，引擎通常静默跳过而非崩溃——报告可能缺失个别内容 |
 
 ---
 
-## 证据与复核方式
+## 提示词去哪儿看
+
+引擎内部使用的每一段提示词（分块摘要、facet 抽取、七章、总览、主会话强制话术），其英文原文和中文对照在配套页面：[Claude Code /insights 内嵌提示词全文](../concepts/claude-code-insights-prompts.md)。
+
+---
+
+## 附录 A：源码符号速查
+
+正文中使用了中文职责名来称呼各函数（如"报告引擎"、"有损投影"）。以下对照表用于在 cli.js 源码中定位对应的 minify 实现。**不需要核对源码的读者可以完全跳过本附录。**
+
+| 正文称呼 | 源码导出名 | 2.1.209 minify 名 |
+|---|---|---|
+| 报告引擎 | `generateUsageReport` | `Osp` |
+| 强制话术模板 | `buildInsightsResponsePrompt` | `Nsp` |
+| 跨会话聚合 | `aggregateData` | `Msp` |
+| 单会话工具统计 | `extractToolStats` | `Dsp` |
+| 多会话时间重叠检测 | `detectMultiClauding` | `Lsp` |
+| 会话分支去重 | `deduplicateSessionBranches` | `Vm_` |
+| 有损投影 | 非导出，会话文本进模型前的截断/转换 | `Gm_` |
+| 枚举会话 | 非导出 | `ch_` |
+| meta 读 / 写 | 非导出 | `Jm_` / `Qm_` |
+| 读聊天记录 | 非导出 | `nIo` |
+| facet 读 / 写 / 抽取 | 非导出 | `Ym_` / `Xm_` / `Zm_` |
+| 长文分块摘要 | 非导出 | `Km_` + `zm_` |
+| 章节编排 / 单次章节请求 | 非导出 | `th_` / `Isp` |
+| HTML 渲染 | 非导出 | `ah_` |
+| facet 校验 | 非导出 | `$sp` |
+| 配置根 / projects / usage-data / facets / session-meta 路径 | 路径辅助函数 | `pn` / `xz` / `znn` / `rIo` / `P8s` |
+| 斜杠分发主路径 | 非导出 | `Zxs` |
+| 默认 Opus 路由辅助 | 非导出 | `sS` ← `Rsp` / `Om_` |
+| 命令实现体 / 懒加载模块 | 非导出 | `ph_` / `Fsp` |
+
+### 在源码中检索
+
+建议用以下字符串在 cli.js 中定位关键位置：
+
+- `name:"insights"` → 命令对象字面量
+- `generateUsageReport:` → 报告引擎导出
+- `querySource:"insights"` → 内部模型调用的三处标记
+- `The user just ran /insights` → 主会话强制话术模板
+- `mode:384` → HTML 文件写盘权限
+- `warmup_minimal` → 热身会话过滤关键字
+- `1800000` → 多会话重叠检测窗口（30 分钟的毫秒数）
+
+---
+
+## 附录 B：单次运行预算总览
+
+| 限制项 | 约值 | 作用域 |
+|---|---|---|
+| meta 检查并行批 | 50 | 缓存有效性检查 |
+| meta 新建上限 | 200 | 单次运行 |
+| meta 刷新上限 | 200 | 单次运行 |
+| 读聊天记录批大小 | 10 | 并行读盘 |
+| facet 新抽上限 | 50 | 单次运行 |
+| facet 新抽批大小 | 50 | 并行请求 |
+| 投影长度阈值 | 30000 字符 | 超过则触发分块摘要 |
+| 摘要切片大小 | 25000 字符 | 每片 |
+| 用户消息投影截断 | 500 字符 | 每条 |
+| 助手文本投影截断 | 300 字符 | 每条 |
+| 分块摘要输出 | 500 token | 每片 |
+| facet 输出 | 4096 token | 每个会话 |
+| 章节/总览输出 | 8192 token | 每章 |
+| 会话摘要采样 | 50 条 | 七章输入 |
+| 摩擦详情采样 | 20 条 | 七章输入 |
+| 用户指示采样 | 15 条 | 七章输入 |
+| 多会话重叠窗口 | 30 分钟 | 重叠检测 |
+| HTML 权限字面量 | 384（Unix 0600 意图） | 写盘 |
+| 最短可分析会话 | ≥2 条用户消息 且 ≥1 分钟 | 质量过滤 |
+
+---
+
+## 证据来源
 
 | 项 | 内容 |
 |---|---|
-| 文件 | `artifacts/2.1.209/global-prefix/node_modules/@cometix/claude-code/cli.js` |
-| 包 | `@cometix/claude-code` **2.1.209** |
+| 分析文件 | `artifacts/2.1.209/global-prefix/node_modules/@cometix/claude-code/cli.js` |
+| 包版本 | `@cometix/claude-code` 2.1.209 |
 | SHA-256 | `724361250D92E0EBF10FEE99387CCD25FA29E0D463600FE06DFA02F570CC4A89` |
-| 来源 | [Cometix 恢复流水线](../PriorKnowledge/cometix-claude-code-restore.md) |
-| 方法 | acorn 定位 + 关键函数体/字面量锚点；不以临时截取脚本长度为证据 |
-| 禁止 | 为复核执行 `/insights` 或打 API |
-| 检索串 | `name:"insights"` · `generateUsageReport:` · `querySource:"insights"` · `The user just ran /insights` · `mode:384` · `warmup_minimal` · `1800000` |
-
----
-
-## 相关页面
-
-- [Claude Code /insights 内嵌提示词契约](../concepts/claude-code-insights-prompts.md)  
-- [CometixSpace-claude-code 恢复流水线](../PriorKnowledge/cometix-claude-code-restore.md)  
-- [acorn 与 JS AST 解析工具](../PriorKnowledge/acorn-and-js-ast-parsers.md)  
-
----
-
-## 附录-A
-
-**符号地图（核对 cli.js 用）**
-
-正文尽量不堆 minify。需要在 bundle 里搜索时对照本表。
-
-| 正文怎么说 | 导出名 / 含义 | 2.1.209 实现名 |
-|---|---|---|
-| 报告引擎 | generateUsageReport | `Osp` |
-| 强制话术模板 | buildInsightsResponsePrompt | `Nsp` |
-| 跨会话聚合 | aggregateData | `Msp` |
-| 单会话工具统计 | extractToolStats | `Dsp` |
-| 多会话时间重叠 | detectMultiClauding | `Lsp` |
-| 会话分支去重 | deduplicateSessionBranches | `Vm_` |
-| 有损投影 | （会话文本进模型前） | `Gm_` |
-| 枚举会话 | | `ch_` |
-| session-meta 读 / 写 | | `Jm_` / `Qm_` |
-| 读 transcript | | `nIo` |
-| facets 读 / 写 / 抽 | | `Ym_` / `Xm_` / `Zm_` |
-| 长文分块 | 投影后过长 | `Km_` + `zm_` |
-| 章节编排 / 单次章节请求 | | `th_` / `Isp` |
-| HTML 渲染 | | `ah_` |
-| facet 校验 | | `$sp` |
-| 配置根 / projects / usage-data / facets / session-meta | 路径 helpers | `pn` / `xz` / `znn` / `rIo` / `P8s` |
-| prompt 分发主路径 | | `Zxs`（`cxy` 为旁路薄封装） |
-| 默认 Opus 路由辅助 | | `sS` ← `Rsp` / `Om_` |
-| 命令实现 / 懒加载模块 | | `ph_` / `Fsp` |
-
----
-
-## 附录-B
-
-**单次运行预算**
-
-| 限制什么 | 约值 | 用在哪 |
-|---|---|---|
-| meta 检查并行批 | 50 | 缓存检查 |
-| 新建 / 刷新 meta | 各 200 | 单次量帽 |
-| 读 transcript 批 | 10 | 磁盘 |
-| 新 facet 上限 / 批 | 50 / 50 | 模型费用 |
-| 投影过长阈值 / 切片 | 30000 / 25000 字符 | 分块前 |
-| 用户 / 助手投影截断 | 500 / 300 字符 | 投影 |
-| 分块 / facet / 章节输出 | 500 / 4096 / 8192 token | 内部调用 |
-| 章节上下文采样 | 50 / 20 / 15 | 摘要 / 摩擦 / 指示 |
-| 多会话重叠窗口 | 30 分钟 | 重叠检测 |
-| HTML 权限字面量 | 384（Unix 0600 意图） | writeFile |
-| 最短可分析会话 | ≥2 条用户消息，≥1 分钟 | 质量过滤 |
+| 来源 | Cometix 恢复流水线 |
+| 方法 | acorn 8.17.0 AST 解析；template literal 括号平衡扫描；关键函数体和字面量锚点交叉验证 |
+| 未做 | 未实际执行 `/insights`、未对 API 发起请求、未读取本机隐私报告 |

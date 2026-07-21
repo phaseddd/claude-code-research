@@ -20,3 +20,7 @@
 [2026-07-19] mechanism | /insights 正文改为中文职责叙述，minify 退到附录；路径表/漏斗/挂载点去掉 Osp/pn 墙 | 无（同页修订）
 [2026-07-20] mechanism | /insights 机制页：总览后加本页名词（命令外壳 8 + 数据流水线 8）、结论双坐标预热、L4.0 改为路径索引、L4.2 开篇回指；订正 L2 长等待时序 | 无（同页修订）
 [2026-07-20] mechanism | /insights 机制页入库收尾：本页名词补 mtime 独立行、Obsidian 短锚点（本页名词/L2/附录-A|B）、glossary 同步；冲突复检 OK | 无（同页修订）
+[2026-07-21] mechanism | /insights Claude 叙事化机制稿直接修订：保留用户等待→报告引擎→主会话故事线，校准调用点/请求次数、模型后端、缓存孤儿、采样输入与设计推断边界；保留 draft | 无（与 active 机制页冲突复检 OK）
+[2026-07-21] concept | /insights Claude 叙事化提示词稿直接修订：保留用途→译文→原文→解读结构，订正 likely_satisfied/JSON 契约，补字段与数量歧义、真实 minify 占位符及数据边界；保留 draft | 无（与 active 契约页冲突复检 OK）
+[2026-07-21] mechanism | /insights 机制页：叙事化终稿就地取代正式路径，升 active；删临时 rewrite/旧稿旁路 | 无（同页取代，index 不新增行）
+[2026-07-21] concept | /insights 提示词页：叙事化终稿就地取代正式路径，升 active；删临时 rewrite/旧稿旁路 | 无（同页取代，index 不新增行）
