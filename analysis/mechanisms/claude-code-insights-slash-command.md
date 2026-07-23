@@ -351,3 +351,9 @@ Want to dig into any section or try one of the suggestions?
 | 来源 | Cometix 恢复流水线 |
 | 方法 | acorn 8.17.0 AST 解析；template literal 括号平衡扫描；关键函数体和字面量锚点交叉验证 |
 | 未做 | 未实际执行 `/insights`、未对 API 发起请求、未读取本机隐私报告 |
+
+---
+
+## 交互演示
+
+- [demos/insights-pipeline](../../demos/insights-pipeline/) — `/insights` 报告引擎流水线逐步演示（脚手架，实现待补）

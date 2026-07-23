@@ -860,3 +860,9 @@ Want to dig into any section or try one of the suggestions?
 | P12 主会话话术 | `Nsp` 函数返回的模板字符串 | `getPromptForCommand` → `Nsp` |
 
 三处 `querySource: "insights"` 字面量分别位于：`zm_`（分块摘要）、`Zm_`（facet 抽取）、`Isp`（章节+总览）。P12 不在这三处——它走主会话的 `shouldQuery` 路径。
+
+---
+
+## 交互演示
+
+- [demos/insights-pipeline](../../demos/insights-pipeline/) — 与 mechanism 页共用：报告引擎流水线与提示词阶段的逐步演示（脚手架，实现待补）
