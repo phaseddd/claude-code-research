@@ -1,9 +1,13 @@
 // M0 入口：序章（黑场 → 标题 → 按住运行）→ 进入引擎占位场景
 // 后续里程碑将把占位场景替换为第一幕（S1~S3）真实场景
 import './style.css'
+import gsap from 'gsap'
 import { mountPrologue } from './prologue.js'
 import { createTimeline } from './timeline.js'
 import { createPlaceholderScene } from './scenes/placeholder.js'
+
+// 尊重动效偏好：黑场三段式淡入在 reduce 下直接呈现
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 // WebGL2 检测：无则降级为静态科普页（科普信息不丢）
 const supportsWebGL2 = (() => {
@@ -36,12 +40,16 @@ const timeline = createTimeline({
   ],
   onEnter: (id) => {
     if (id === 'stage1') {
+      // 黑场三段式：序章淡出后，场景先以黑场呈现（#scene opacity 0），
+      // 停顿 0.3s 再淡入 —— 电影化的"黑场过渡"，避免硬切换
+      sceneEl.style.opacity = '0'
       activeScene = createPlaceholderScene({
         container: sceneEl,
         // 占位浮层的"回到序章"：销毁场景 → 重置时间轴 → 重新挂载序章
         onRestart: () => {
           activeScene?.dispose()
           activeScene = null
+          sceneEl.style.opacity = '1' // 重置黑场态，供下次进入复用
           // 重置时间轴：不重置的话 current 停在 stage1，再次进入会被
           // goTo 的"id === current 忽略"挡掉 → 场景永不创建 → 黑屏
           timeline.goTo('prologue')
@@ -49,6 +57,8 @@ const timeline = createTimeline({
         },
       })
       activeScene.start()
+      // 黑场停顿 0.3s → 场景淡入 0.5s（reduce 偏好：直接呈现）
+      gsap.to(sceneEl, { opacity: 1, duration: reducedMotion ? 0.01 : 0.5, delay: reducedMotion ? 0 : 0.3 })
     }
   },
   onLeave: () => {},

@@ -135,14 +135,15 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
         done = true
         // 按住完成 → 序章退场：0.5s 淡出并上移 20px（退场期间禁点，防二次触发）
         holdEl.style.pointerEvents = 'none'
+        // 黑场三段式第一段：纯淡出（去掉位移 —— 20px 上移+加速曲线
+        // 会形成"抽一下"的干扰，黑场停顿由 main.js 在场景侧接管）
         exitTween = gsap.to(root, {
           opacity: 0,
-          y: -20,
-          duration: reducedMotion ? 0.01 : 0.5, // reduce 偏好：立即退场
+          duration: reducedMotion ? 0.01 : 0.4,
           ease: 'power2.in',
           onComplete: () => {
             dispose()
-            // 退场动画结束才进入引擎（黑场过渡感）
+            // 退场动画结束才进入引擎
             if (onEnter) onEnter()
           },
         })
