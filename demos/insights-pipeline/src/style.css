@@ -1,0 +1,331 @@
+/* 全局样式。颜色与 src/theme.js 同步维护（互指注释） */
+:root {
+  --bg: #05070d;
+  --act1: #3b6cf6;
+  --act2: #8b5cf6;
+  --act3: #f5b942;
+  --text: #e8ecf4;
+  --text-dim: rgba(232, 236, 244, 0.55);
+  --mono: #7dd3fc;
+  --hold: #7dd3fc;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden; /* 滚动完全由 JS 接管（参照零站点） */
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ---------- 序章 ---------- */
+
+.prologue {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8vh 8vw;
+  text-align: center;
+  pointer-events: auto;
+  background: var(--bg);
+  /* 小屏竖屏内容可能超高：允许序章内部滚动兜底，避免按钮被裁掉 */
+  overflow-y: auto;
+}
+
+.prologue > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 背景层：星点 + 中心冷蓝微光 + 角落青紫晕（独立层便于鼠标视差位移；
+   参照零站点 stage1Parallax 手法：背景随指针微移制造景深感） */
+.prologue-fx {
+  position: fixed; /* 滚动容器（小屏）内固定于视口，背景不被滚走 */
+  inset: -20px; /* 比视口大一圈，给视差位移留余量 */
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1.5px 1.5px at 18% 26%, rgba(255, 255, 255, 0.5), transparent 2px),
+    radial-gradient(1.5px 1.5px at 72% 64%, rgba(255, 255, 255, 0.32), transparent 2px),
+    radial-gradient(1px 1px at 84% 22%, rgba(125, 211, 252, 0.6), transparent 1.5px),
+    radial-gradient(1px 1px at 30% 74%, rgba(255, 255, 255, 0.28), transparent 1.5px),
+    radial-gradient(1.5px 1.5px at 55% 12%, rgba(125, 211, 252, 0.45), transparent 2px),
+    radial-gradient(ellipse 62% 52% at 50% 40%, rgba(59, 108, 246, 0.16), transparent 72%),
+    radial-gradient(ellipse 34% 24% at 80% 16%, rgba(139, 92, 246, 0.07), transparent 70%);
+  transition: transform 0.3s cubic-bezier(0.2, 0.6, 0.3, 1); /* 视差平滑跟随 */
+}
+
+/* 胶片颗粒层（feTurbulence 噪点）：整屏低透明度叠加，破除纯色黑场
+   的"网页感"，参照零站点后处理链里的前景胶片颗粒 */
+.prologue::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.prologue-title {
+  font-weight: 900;
+  font-size: clamp(2.2rem, 6vw, 4.5rem);
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  margin-bottom: 4.5vh;
+  /* 标题为图形：整体冷光晕（参照零站点字即图形） */
+  filter: drop-shadow(0 0 28px rgba(125, 211, 252, 0.28));
+}
+
+/* 渐变文字必须落在字符级：wrapChars 把文字拆成 .prologue-char 后，
+   父元素自身无文本节点，background-clip: text 无处可剪 → 标题会整体消失 */
+.prologue-char {
+  background: linear-gradient(180deg, #ffffff 30%, #9db8ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.prologue-title .hl {
+  /* 命令名高亮：附额外青色光晕 */
+  filter: drop-shadow(0 0 16px rgba(125, 211, 252, 0.55));
+}
+
+.prologue-body {
+  max-width: 640px;
+  font-size: clamp(0.95rem, 1.6vw, 1.1rem);
+  line-height: 1.9;
+  color: var(--text);
+}
+
+.prologue-body p + p {
+  margin-top: 1.2em;
+}
+
+.prologue-source {
+  margin-top: 4vh;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.prologue-link {
+  color: var(--mono);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  pointer-events: auto;
+}
+
+.prologue-hold {
+  margin-top: 5vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2vh;
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.prologue-hold.is-dragging {
+  cursor: grabbing;
+}
+
+.hold-hit {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  /* 触屏上按住时禁用浏览器手势识别（pan/长按选择），避免 pointercancel 打断 */
+  touch-action: none;
+  cursor: grab;
+  outline: none;
+}
+
+.hold-ring {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+/* 底环：常驻可见的引导环（呼吸脉动提示"这里可以按"），按下前就有轮廓 */
+.hold-ring-base {
+  fill: none;
+  stroke: rgba(125, 211, 252, 0.28);
+  stroke-width: 3;
+  animation: hold-breathe 2.4s ease-in-out infinite;
+}
+
+.hold-hit:hover .hold-ring-base {
+  stroke: rgba(125, 211, 252, 0.5);
+}
+
+@keyframes hold-breathe {
+  0%,
+  100% {
+    stroke-opacity: 0.28;
+  }
+  50% {
+    stroke-opacity: 0.55;
+  }
+}
+
+/* 进度弧：按住时填充（JS 驱动 dashoffset），带辉光 */
+.hold-ring-progress {
+  fill: none;
+  stroke: var(--hold);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 289.03; /* 2π × 46 */
+  stroke-dashoffset: 289.03;
+  transition: stroke-dashoffset 0.05s linear;
+  filter: drop-shadow(0 0 6px rgba(125, 211, 252, 0.7));
+}
+
+/* 环心符号：斜杠命令感，发光提示可交互 */
+.hold-core {
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-weight: 700;
+  font-size: 2.1rem;
+  line-height: 1;
+  color: var(--mono);
+  text-shadow: 0 0 18px rgba(125, 211, 252, 0.7);
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.hold-label {
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  text-shadow: 0 0 20px rgba(125, 211, 252, 0.25);
+}
+
+.hold-hint {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* 按住反馈：环心符号放大 + 底环提亮（按压即反馈，参照零站点按压变色手法） */
+.prologue-hold.is-dragging .hold-core {
+  transform: scale(1.18);
+  text-shadow: 0 0 26px rgba(125, 211, 252, 0.9);
+}
+
+.prologue-hold.is-dragging .hold-ring-base {
+  stroke: rgba(125, 211, 252, 0.55);
+  animation: none;
+}
+
+.hold-core {
+  transition: transform 0.15s ease;
+}
+
+.prologue-source {
+  letter-spacing: 0.04em;
+}
+
+/* 尊重动效偏好：关闭呼吸/粒子动画（可访问性） */
+@media (prefers-reduced-motion: reduce) {
+  .hold-ring-base {
+    animation: none;
+  }
+  .prologue-fx {
+    transition: none;
+  }
+}
+
+/* ---------- 占位场景浮层（M0 进入引擎后） ---------- */
+
+.placeholder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2vh;
+  pointer-events: none;
+  text-align: center;
+}
+
+.placeholder-title {
+  font-weight: 900;
+  font-size: clamp(1.6rem, 4vw, 2.6rem);
+  color: var(--text);
+}
+
+.placeholder-note {
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.placeholder-restart {
+  pointer-events: auto;
+  margin-top: 1.5vh;
+  padding: 0.6em 2em;
+  border: 1px solid rgba(125, 211, 252, 0.4);
+  border-radius: 2em;
+  background: rgba(125, 211, 252, 0.08);
+  color: var(--mono);
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.placeholder-restart:hover {
+  background: rgba(125, 211, 252, 0.18);
+  border-color: rgba(125, 211, 252, 0.7);
+}
+
+/* ---------- 降级模式（无 WebGL2） ---------- */
+
+.degraded-note {
+  margin-top: 3vh;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--act3);
+}
