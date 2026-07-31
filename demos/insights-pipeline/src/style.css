@@ -88,16 +88,37 @@ body {
 }
 
 /* 胶片颗粒层（feTurbulence 噪点）：整屏低透明度叠加，破除纯色黑场
-   的"网页感"，参照零站点后处理链里的前景胶片颗粒 */
+   的"网页感"，参照零站点后处理链里的前景胶片颗粒。
+   动态跳帧（400ms 步进位移）制造老电影颗粒感 —— 静态噪点在暗背景上
+   肉眼几乎不可见，动起来才有"胶片"质感 */
 .prologue::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  opacity: 0.05;
-  mix-blend-mode: overlay;
+  opacity: 0.09;
+  mix-blend-mode: screen; /* screen 对暗底提亮明显，overlay 在纯黑上几乎无效 */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain-shift 0.4s steps(4) infinite;
+}
+
+@keyframes grain-shift {
+  0% {
+    background-position: 0 0;
+  }
+  25% {
+    background-position: -20px 12px;
+  }
+  50% {
+    background-position: 14px -18px;
+  }
+  75% {
+    background-position: -10px -8px;
+  }
+  100% {
+    background-position: 20px 16px;
+  }
 }
 
 .prologue-title {
@@ -264,13 +285,16 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* 尊重动效偏好：关闭呼吸/粒子动画（可访问性） */
+/* 尊重动效偏好：关闭呼吸/颗粒跳帧动画（可访问性；颗粒降为静态） */
 @media (prefers-reduced-motion: reduce) {
   .hold-ring-base {
     animation: none;
   }
   .prologue-fx {
     transition: none;
+  }
+  .prologue::after {
+    animation: none;
   }
 }
 
