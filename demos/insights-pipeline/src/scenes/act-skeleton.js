@@ -4,8 +4,9 @@
 // 实现约束：WebGL2 + 原生 Three.js，粒子总量 ~3120、单 canvas，符合性能预算。
 //
 // 生命周期对齐 MasterTimeline segment：enter 构建挂载 → scrub(p) 标题视差
-// → update(t, dt) 时间动画 → teardown 释放。渲染循环在模块内自持（rAF），
-// scrub / update 只做同步，不参与渲染驱动。
+// → update(t, dt) 渲染与动画 → teardown 释放。
+// 场景不自持 rAF：渲染由 timeline 的单 rAF 驱动（update 钩子每帧调用），
+// 动画相位用时间轴唯一时钟 t（绝对秒，可重现）；dt 供需要帧间差分的场景使用。
 
 import * as THREE from 'three'
 import { COLORS } from '../theme.js' // 颜色单一来源（与 style.css 互指注释同步）
@@ -30,9 +31,8 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matc
  * @returns {{enter: () => void, scrub: (p: number) => void, update: () => void, dispose: () => void}}
  */
 export function createActSkeleton({ sceneEl, uiEl, color, title, subtitle, showRestart = false, onRestart = null }) {
-  // 防重复 enter / dispose 的守卫
+  // 防重复 dispose 的守卫
   let disposed = false
-  let started = false
 
   // ---------- 渲染器 ----------
   // WebGL2 渲染器：抗锯齿开、alpha 关（背景由 clearColor 决定）
@@ -129,15 +129,12 @@ export function createActSkeleton({ sceneEl, uiEl, color, title, subtitle, showR
   }
   restartBtn?.addEventListener('click', onRestartClick)
 
-  // ---------- 渲染循环（自持 rAF；scrub/update 只做同步） ----------
-  let rafId = 0
-  const clock = new THREE.Clock()
-  const tick = () => {
-    const t = clock.getElapsedTime()
-
+  // ---------- 渲染与动画（由 timeline 的 update 每帧驱动，单 rAF） ----------
+  // 动画相位用绝对时间 t（秒），帧率无关且可重现；reduce 时静止但保持渲染
+  const renderFrame = (t) => {
     if (!reducedMotion) {
-      // 星云缓慢自转（M1 不做顶点呼吸）
-      nebula.rotation.y += 0.0008
+      // 星云缓慢自转（0.0008 rad/帧 @60fps → 0.048 rad/s，M1 不做顶点呼吸）
+      nebula.rotation.y = t * 0.048
 
       // 光河逐粒子回卷：流速 0.35 单位/秒，x 始终落在 [-SPAN/2, SPAN/2]
       const pos = riverGeometry.attributes.position.array
@@ -158,29 +155,25 @@ export function createActSkeleton({ sceneEl, uiEl, color, title, subtitle, showR
     }
 
     renderer.render(scene, camera)
-    rafId = requestAnimationFrame(tick)
   }
 
   // ---------- 对外契约（对齐 MasterTimeline segment 生命周期） ----------
   return {
-    // enter：挂载完成（canvas 与覆盖层已在构造函数中创建），启动渲染
-    enter() {
-      if (disposed || started) return
-      started = true
-      rafId = requestAnimationFrame(tick)
-    },
+    // enter：挂载已完成（canvas 与覆盖层在构造函数中创建），无自持循环
+    enter() {},
     // scrub：段内进度 0~1 → 幕标题从下方 40px 升到原位（验证 scrub 通路，
     // M3 真实站替换为内容驱动的场景同步）
     scrub(p) {
       overlay.style.transform = `translateY(${(1 - p) * 40}px)`
     },
-    // update：时间动画已由渲染循环自持（与 scrub 驱动分离），此处空实现
-    update() {},
+    // update：每帧渲染与动画（timeline 单 rAF 驱动，t 为唯一时钟）
+    update(t) {
+      renderFrame(t)
+    },
     // teardown：释放 GPU 资源、移除 canvas 与覆盖层 DOM、撤销监听
     dispose() {
       if (disposed) return
       disposed = true
-      cancelAnimationFrame(rafId)
       window.removeEventListener('resize', onResize)
       restartBtn?.removeEventListener('click', onRestartClick)
       // 释放 GPU 资源：geometry / material（本场景未用纹理）

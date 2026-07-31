@@ -42,4 +42,11 @@ export default defineConfig({
     target: 'es2022',
   },
   plugins: [serveRepoDir('/analysis'), serveRepoDir('/workflow')],
+  server: {
+    watch: {
+      // build 产物（npm run build 写 dist/）不参与 dev watch：
+      // 否则 dev 会话中每次构建都触发 full-reload 打断页面
+      ignored: ['**/dist/**'],
+    },
+  },
 })

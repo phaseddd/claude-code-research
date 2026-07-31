@@ -136,7 +136,8 @@ function bootTimeline() {
   gsap.to(sceneEl, { opacity: 1, duration: reducedMotion ? 0.01 : 0.5, delay: reducedMotion ? 0 : 0.3 })
 }
 
-// 滚动帧 → 时间轴（scroll 在序章阶段不存在，回到序章后 onFrame 为空转）
+// 滚动帧 → 时间轴（scroll 只在引擎阶段存在：序章阶段未创建，
+// 回到序章时已 dispose 取消 rAF，onFrame 不再被调用）
 function onScrollFrame(current, target, dt) {
   timeline?.onFrame(current, target, dt)
 }

@@ -11,6 +11,7 @@
 // 分段与生命周期由 timeline.js 消费 onFrame 驱动。
 
 const WHEEL_FACTOR = 35 // wheel 力度系数（对齐零站点 ×35）
+const WHEEL_CLAMP = 500 // 单帧 wheel 增量上限（px；对齐零站点 ±500 clamp，防甩动滚轮单帧跳多段）
 const KEY_STEP = 0.9 // 方向键单步（vh）
 const KEY_PAGE = 6 // PageDown / PageUp / Space 步进（vh）
 const SNAP_EPS = 0.5 // target 与 current 差值小于此（vh）时直接对齐，
@@ -65,9 +66,10 @@ export function createScroll({ max = 0, onFrame = null, wheelFactor = WHEEL_FACT
   rafId = requestAnimationFrame(tick)
 
   // ---------- 输入监听 ----------
-  // wheel：deltaY 像素 → vh（÷视口高）；deltaMode 1（行）/ 2（页）先换算成像素
+  // wheel：deltaY 像素 → vh（÷视口高）；deltaMode 1（行）/ 2（页）先换算成像素；
+  // 单帧增量 clamp ±WHEEL_CLAMP（对齐零站点，防甩动滚轮瞬间跳段）
   const onWheel = (e) => {
-    let px = e.deltaY
+    let px = Math.max(-WHEEL_CLAMP, Math.min(WHEEL_CLAMP, e.deltaY))
     if (e.deltaMode === 1) px *= 16
     else if (e.deltaMode === 2) px *= window.innerHeight
     bump((px * wheelFactor) / window.innerHeight)
