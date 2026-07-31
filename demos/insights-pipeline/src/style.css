@@ -296,11 +296,15 @@ body {
   .prologue::after {
     animation: none;
   }
+  .act-scroll {
+    animation: none;
+    opacity: 0.8;
+  }
 }
 
-/* ---------- 占位场景浮层（M0 进入引擎后） ---------- */
+/* ---------- 三幕骨架覆盖层（M1 进入引擎后） ---------- */
 
-.placeholder-overlay {
+.act-skeleton {
   position: fixed;
   inset: 0;
   z-index: 20;
@@ -313,36 +317,60 @@ body {
   text-align: center;
 }
 
-.placeholder-title {
+.act-title {
   font-weight: 900;
-  font-size: clamp(1.6rem, 4vw, 2.6rem);
-  color: var(--text);
+  font-size: clamp(1.8rem, 5vw, 3.4rem);
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 30px rgba(125, 211, 252, 0.25);
 }
 
-.placeholder-note {
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
-  font-size: 0.85rem;
+.act-sub {
+  max-width: 560px;
+  font-size: clamp(0.95rem, 1.8vw, 1.2rem);
+  line-height: 1.7;
   color: var(--text-dim);
 }
 
-.placeholder-restart {
+.act-scroll {
+  position: absolute;
+  bottom: 4vh;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+  animation: scroll-hint 2.2s ease-in-out infinite;
+}
+
+@keyframes scroll-hint {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.act-restart {
+  position: absolute;
+  top: 3vh;
+  right: 3vw;
   pointer-events: auto;
-  margin-top: 1.5vh;
-  padding: 0.6em 2em;
-  border: 1px solid rgba(125, 211, 252, 0.4);
+  padding: 0.45em 1.2em;
+  border: 1px solid rgba(125, 211, 252, 0.35);
   border-radius: 2em;
-  background: rgba(125, 211, 252, 0.08);
+  background: rgba(125, 211, 252, 0.06);
   color: var(--mono);
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: 0.95rem;
-  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
-.placeholder-restart:hover {
-  background: rgba(125, 211, 252, 0.18);
-  border-color: rgba(125, 211, 252, 0.7);
+.act-restart:hover {
+  background: rgba(125, 211, 252, 0.16);
+  border-color: rgba(125, 211, 252, 0.65);
 }
 
 /* ---------- 降级模式（无 WebGL2） ---------- */
