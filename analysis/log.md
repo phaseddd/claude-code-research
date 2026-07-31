@@ -24,3 +24,5 @@
 [2026-07-21] concept | /insights Claude 叙事化提示词稿直接修订：保留用途→译文→原文→解读结构，订正 likely_satisfied/JSON 契约，补字段与数量歧义、真实 minify 占位符及数据边界；保留 draft | 无（与 active 契约页冲突复检 OK）
 [2026-07-21] mechanism | /insights 机制页：叙事化终稿就地取代正式路径，升 active；删临时 rewrite/旧稿旁路 | 无（同页取代，index 不新增行）
 [2026-07-21] concept | /insights 提示词页：叙事化终稿就地取代正式路径，升 active；删临时 rewrite/旧稿旁路 | 无（同页取代，index 不新增行）
+[2026-07-31] case | why.zero.university 交互机制解剖：叙事型 3D 落地页机制层（MasterTimeline 时间轴/滚动接管/TAP HOLD/画圆判定/XP 计量）+ 质感层（情绪节拍/贯穿隐喻/数据即物体）；2026-07-31 快照；demos/insights-pipeline 参考素材 | 无（冲突复检 OK）
+[2026-07-31] maintenance | 边界更正：零大学解剖属前端 showcase 参考，不入知识库（workflow/README「demos 不进 analysis 索引」纪律）→ 页面迁移至 demos/insights-pipeline/docs/，index/glossary 回滚 | 无
