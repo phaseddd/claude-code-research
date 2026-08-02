@@ -29,3 +29,4 @@
 [2026-08-02] investigation | DeepSeek Anthropic 兼容端点（api.deepseek.com/anthropic）对 tools[].type 做严格枚举白名单（仅 web_search_20250305/20260209），Claude Code 开启 advisor 注入 advisor_20260301 → 全请求 400；9 组 curl 对照 + 真实会话复现，位置在端点反序列化层（非 cometix 恢复版、非模型端）；serde/axum 归因为高置信度推断（非官方确认）；「改 type 欺骗」列为开放问题（未尝试）；新建 investigations/ 目录归置 | 无（冲突复检 OK）
 [2026-08-02] mechanism | Claude Code advisor 服务端工具全链路：四层门控（H7）→ advisorModel 三入口 → 工具 + YQu 说明书（全文 + 中文译文）注入 → 流式调用（server_tool_use / advisor_tool_result 判别联合、加密输出、error_code 六枚举）→ 多轮回填与 P6s 清理 → 错误处理；kn() 与 base URL 分离机制；符号表 + 检索字符串；服务端执行环节为文档级证据 | 无（冲突复检 OK）
 [2026-08-02] maintenance | 库级收尾：investigations/ 目录新建；glossary 新增 topic:deepseek；事实修正 cli.js 非「单行 bundle」（实测 50209 行、最长行约 538KB），两页源码定位描述同步订正 | 无
+[2026-08-03] maintenance | workflow 框架补缺：schema 目录清单补齐五种 kind（investigations/、decisions/ 实建）、frontmatter YAML 安全规则、status 四态一体判定（入库三问 + 维护流转）；intake 选类型与页面结构规划改为「决策归维护者」确认制、模板定位为默认骨架非表单、log 粒度一行 = 一次 git 提交 | 无

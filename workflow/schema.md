@@ -27,6 +27,12 @@ tags:
 - **不含 `visibility`**（见第 1 节，知识页统一在公开根 `analysis/`）。
 - 不许占位符：`tags` 写 `TODO`、`applies_to` 留空，都算没填。
 
+**YAML 安全（Obsidian 用 js-yaml 解析，frontmatter 解析失败 = 整页属性失效）**：
+- 值以 `@`、反引号、`*`、`#`、`{`、`[`、`!` 等 YAML 保留字符开头时，必须加引号（如 `applies_to: "@cometix/claude-code ..."`）——裸值以这些字符开头会解析失败。
+- 值恰好是 `true/false/yes/no/null` 或纯数字时加引号，避免被强转为布尔/数字。
+- `tags` 条目冒号后不能有空格（`- topic:xxx`，不是 `- topic: xxx`——后者被解析成嵌套映射）。
+- 全角标点（`；`、`（`、`——`）不触发 YAML 解析，可放心用于裸值；半角「冒号+空格」会破坏结构，改用全角。
+
 ## 3. kind（页面类型，先 5 种）
 
 - `concept` —— 解释一个名词 / 概念是什么。
@@ -46,6 +52,18 @@ tags:
 
 **关键：六步流程跑完 ≠ 自动 `active`。** 跑完只说明「流程合格」，还要再判一次「依据够不够、边界清不清、可不可复核」；够格才 `active`，否则保留 `draft` 或标 `stale`。
 
+**status 判定（四态一体）**：
+
+- 入库时（第 6 步）——新页只在 `draft` / `active` 间选：
+  1. 主结论有直接证据吗（实测或权威文档）？—— 否 → `draft`
+  2. 未确认点触及主结论吗（关键环节缺实测）？—— 是 → `draft`（除非该环节为权威文档级证据）
+  3. 边界与未确认已标注、可复核吗？—— 否 → `draft`
+  三问全过 → `active`。
+- 维护时（maintenance 扫库）——已有页在 `active` / `stale` / `superseded` 间流转：
+  - 依据已过时（版本 / 工具行为 / 外部事实变化）→ 标 `stale` 并复核
+  - 被新页或新结论取代 → 标 `superseded`，frontmatter 加 `note:` 指向新页
+  - 复核后依据仍有效 → 保持 `active`
+
 ## 5. tag（受控前缀）
 
 标签用前缀自我约束，先只用两类起步：
@@ -64,8 +82,10 @@ analysis/
   index.md        # 索引：每行一个页面（相对路径 + 一句话 + 标签）
   log.md          # 日志：只追加，记录知识库怎么演化
   glossary.md     # 术语表：受控词与解释
-  concepts/  mechanisms/  cases/  decisions/   # 按 kind 分目录存放页面
+  concepts/  mechanisms/  cases/  decisions/  investigations/   # 按 kind 分目录存放页面
 ```
+
+目录清单与五种 kind 一一对应；实际目录缺位时按本清单补。
 
 `index.md` / `log.md` / `glossary.md` 是**知识库内容 / 状态**，随 `analysis/` 走，不进 `workflow/`。
 
