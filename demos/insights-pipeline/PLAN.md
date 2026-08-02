@@ -190,7 +190,7 @@ Vite + 原生 Three.js + GSAP（无 React）
 | 光河 | 粒子流管线（自定义 shader：河宽 uniform、流速、颜色渐变），贯穿各站；重场戏站河流展开为独立装置 |
 | 重场戏 | S4 压缩管道（粒子收缩+标签流）、S5 标签物体群（十个字段卡，hover 解释）、S6 七星球+光线 |
 | HUD | 底部 8 节点流水线轨道 + 站标题 + 数字滚动反馈；序章/尾声为 2D DOM 排版 |
-| 字体 | 展示 Noto Sans SC 900 / 数据与终端 JetBrains Mono / 正文 Noto Sans SC 400/500 |
+| 字体 | 主标题 `/insights` 命令图形：Playfair Display 900 斜体（西文 display，零大学衬线张力的对应物，OFL 免费、分包实测几十 KB）+ 中文副题思源宋体 Heavy 900（报告/档案感）/ 数据与终端 JetBrains Mono / 正文 Noto Sans SC 400/500 |
 | 数据 | `src/data/sessions.js`（合成 meta/facet）+ `chapters.js`（七章合成示例） |
 | 降级策略 | 无 WebGL2 时：序章（背景文案 + 八站要点 + 知识页链接）以静态页面呈现，科普信息不丢；WebGL 体验为增强层 |
 | 性能预算 | 桌面 60fps 目标：粒子数控制在 1e4 量级、单 canvas 渲染、devicePixelRatio 上限 2（不做 3× 超采样，那是零站点的开销我们不需要） |
@@ -235,6 +235,7 @@ demos/insights-pipeline/
 | 分镜结构 | **八站三幕**：数据（快）→ 理解（慢）→ 生成（仪式） |
 | 贯穿隐喻 | **混合**：光河作主线贯穿，重场戏站（S4/S5/S6）展开独立大奇观 |
 | 交互语言 | 滚动=看，按住=走；**TAP HOLD 全剧仅 3 次**（序章 / 进入模型 / 交付）；无画圆 |
+| 主标题字体 | `/insights` 命令图形化：Playfair Display 900 italic 超大斜体 + 中文副题思源宋体 Heavy 900。否决"花体贯穿"理由（2026-08-03 联网复核"中文无花体字库"判断后修正）：中文 display 系不缺免费可商用选项（思源宋体 Heavy / OFL 书法系，Google Fonts 分包单片 2.8~43KB 实测），真正理由是书法体可读性受限 + 数据/终端气质契合；帅感由西文命令字承担（零大学大字是 sprite 贴图渲染，我们走 DOM webfont 路线） |
 | 文案政策 | 信息量不设限；科普语气；适度猫娘俏皮；措辞不虚构 |
 | gate 内滚动 | 用户 wheel 可加速、不可减速（autoScroll 下限钳制）—— 电影式转场不停车，滚过头需滚回上一段再进；M2 HUD 轨道导航提供直接跳转 |
 | 视频混合 | v2 增强（M0~M6 纯 WebGL shader） |

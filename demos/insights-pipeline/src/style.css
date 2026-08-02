@@ -56,7 +56,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8vh 8vw;
+  padding: 3.2vh 8vw;
   text-align: center;
   pointer-events: auto;
   background: var(--bg);
@@ -122,13 +122,42 @@ body {
 }
 
 .prologue-title {
+  margin-bottom: 1.5vh;
+}
+
+/* 行1：/insights 命令图形 —— 高对比衬线斜体（Playfair Display 900），
+   命令本身当超大图形用（零大学"字即图形"的中文语境对应：西文命令走西文 display）。
+   渐变放整行而非字符级：字符级盒会横向裁掉斜体墨迹（i 点右、g 钩左），
+   整行盒只有首尾字符受边缘约束，垂直空间由 line-height 供给（1.25 → 上下各 0.125em）；
+   整行共享渐变场 = 整体打光，更符合"字即图形" */
+.title-display {
+  display: block;
+  font-family: 'Playfair Display', 'Times New Roman', serif;
+  font-style: italic;
   font-weight: 900;
-  font-size: clamp(2.2rem, 6vw, 4.5rem);
+  font-size: clamp(3rem, 13vw, 9.5rem);
   line-height: 1.25;
-  letter-spacing: 0.02em;
-  margin-bottom: 4.5vh;
-  /* 标题为图形：整体冷光晕（参照零站点字即图形） */
-  filter: drop-shadow(0 0 28px rgba(125, 211, 252, 0.28));
+  letter-spacing: -0.02em; /* 大字号衬线收紧字距，避免松散 */
+  margin-bottom: 1vh;
+  /* 行末斜体墨迹（s 的尾巴）超出内容盒右缘会被渐变裁剪：
+     padding-right 扩展背景覆盖区，0.1em ≈ 15px */
+  padding-right: 0.1em;
+  background: linear-gradient(180deg, #ffffff 25%, #a8c4ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 40px rgba(125, 211, 252, 0.35));
+}
+
+/* 行2：中文副题 —— 思源宋体 Heavy（报告/档案感，呼应"生成 HTML 报告"母题） */
+.title-cn {
+  display: block;
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-weight: 900;
+  font-size: clamp(1.3rem, 3vw, 2.4rem);
+  line-height: 1.2;
+  letter-spacing: 0.04em; /* 宋体副题稍放字距，书卷气 */
+  color: var(--text);
 }
 
 /* 渐变文字必须落在字符级：wrapChars 把文字拆成 .prologue-char 后，
@@ -140,7 +169,20 @@ body {
   color: transparent;
 }
 
-.prologue-title .hl {
+.title-display .prologue-char {
+  /* 渐变由整行父级提供（background-clip: text），字符自身只须透明透出 */
+  background: none;
+  color: transparent;
+}
+
+/* 行2 中文副题：宋体横细竖粗自带笔锋层次，纯白即可，不做渐变 */
+.title-cn .prologue-char {
+  background: none;
+  color: var(--text);
+  text-shadow: 0 0 24px rgba(125, 211, 252, 0.18);
+}
+
+.title-display .hl {
   /* 命令名高亮：附额外青色光晕 */
   filter: drop-shadow(0 0 16px rgba(125, 211, 252, 0.55));
 }
@@ -148,18 +190,87 @@ body {
 .prologue-body {
   max-width: 640px;
   font-size: clamp(0.95rem, 1.6vw, 1.1rem);
-  line-height: 1.9;
+  line-height: 1.4;
   color: var(--text);
 }
 
+/* 正文分层字阶（诗句式短行排版，段距紧凑） */
+.body-lead {
+  font-weight: 700;
+  font-size: 1.02rem;
+  color: var(--text);
+}
+
+.body-detail {
+  font-size: 0.95rem;
+  color: var(--text-dim);
+}
+
+/* 流水线六环节：青色箭头点缀（数据视觉语言，呼应引擎 HUD 轨道） */
+.pipeline {
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  margin: 0.35em 0 0.45em;
+}
+
+.pipe-arrow {
+  font-style: normal;
+  color: var(--mono);
+  margin: 0 0.45em;
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.5);
+}
+
+/* 点题句：思源宋体 900（全篇主题最重强调，与标题副题字阶呼应） */
+.body-theme {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-weight: 900;
+  font-size: 1.2rem;
+  color: var(--text);
+  text-shadow: 0 0 26px rgba(125, 211, 252, 0.3);
+}
+
+/* 正文行距紧凑（诗句式短行排版，段距让位于行距） */
 .prologue-body p + p {
-  margin-top: 1.2em;
+  margin-top: 0.4em;
+}
+
+/* 聊天窗输出示例：两行英文 + file:// 链接（文本锚定知识页话术原文）。
+   等宽字体 = 数据与终端层，聊天窗是它天然场景；半透明面板 + 青色 file 行高亮 */
+.prologue-chat {
+  width: 100%;
+  max-width: 560px;
+  margin: 0.5em auto 0.65em;
+  padding: 0.6em 1.1em;
+  text-align: left;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.8;
+  color: var(--text-dim);
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 24px rgba(59, 108, 246, 0.1);
+}
+
+.prologue-chat p {
+  margin: 0;
+}
+
+.prologue-chat p + p {
+  margin-top: 0.35em;
+}
+
+.prologue-chat .chat-file {
+  color: var(--mono);
+  text-shadow: 0 0 12px rgba(125, 211, 252, 0.4);
 }
 
 .prologue-source {
-  margin-top: 4vh;
+  margin-top: 1.5vh;
   font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: var(--text-dim);
 }
 
@@ -171,11 +282,11 @@ body {
 }
 
 .prologue-hold {
-  margin-top: 5vh;
+  margin-top: 1.5vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.2vh;
+  gap: 0.6vh;
   pointer-events: auto;
   cursor: grab;
   user-select: none;
@@ -255,7 +366,7 @@ body {
 
 .hold-label {
   font-weight: 700;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   letter-spacing: 0.08em;
   color: var(--text);
   text-shadow: 0 0 20px rgba(125, 211, 252, 0.25);
