@@ -26,3 +26,6 @@
 [2026-07-21] concept | /insights 提示词页：叙事化终稿就地取代正式路径，升 active；删临时 rewrite/旧稿旁路 | 无（同页取代，index 不新增行）
 [2026-07-31] case | why.zero.university 交互机制解剖：叙事型 3D 落地页机制层（MasterTimeline 时间轴/滚动接管/TAP HOLD/画圆判定/XP 计量）+ 质感层（情绪节拍/贯穿隐喻/数据即物体）；2026-07-31 快照；demos/insights-pipeline 参考素材 | 无（冲突复检 OK）
 [2026-07-31] maintenance | 边界更正：零大学解剖属前端 showcase 参考，不入知识库（workflow/README「demos 不进 analysis 索引」纪律）→ 页面迁移至 demos/insights-pipeline/docs/，index/glossary 回滚 | 无
+[2026-08-02] investigation | DeepSeek Anthropic 兼容端点（api.deepseek.com/anthropic）对 tools[].type 做严格枚举白名单（仅 web_search_20250305/20260209），Claude Code 开启 advisor 注入 advisor_20260301 → 全请求 400；9 组 curl 对照 + 真实会话复现，位置在端点反序列化层（非 cometix 恢复版、非模型端）；serde/axum 归因为高置信度推断（非官方确认）；「改 type 欺骗」列为开放问题（未尝试）；新建 investigations/ 目录归置 | 无（冲突复检 OK）
+[2026-08-02] mechanism | Claude Code advisor 服务端工具全链路：四层门控（H7）→ advisorModel 三入口 → 工具 + YQu 说明书（全文 + 中文译文）注入 → 流式调用（server_tool_use / advisor_tool_result 判别联合、加密输出、error_code 六枚举）→ 多轮回填与 P6s 清理 → 错误处理；kn() 与 base URL 分离机制；符号表 + 检索字符串；服务端执行环节为文档级证据 | 无（冲突复检 OK）
+[2026-08-02] maintenance | 库级收尾：investigations/ 目录新建；glossary 新增 topic:deepseek；事实修正 cli.js 非「单行 bundle」（实测 50209 行、最长行约 538KB），两页源码定位描述同步订正 | 无

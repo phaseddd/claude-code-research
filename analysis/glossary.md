@@ -13,6 +13,7 @@
 - `topic:insights` —— Claude Code `/insights` 使用报告能力（会话扫描、usage-data、内嵌提示词与 HTML 报告）。
 - `topic:bun-sea` —— Bun SEA（Single Executable Application）单文件可执行分发形态与其内嵌模块提取这一主题域。
 - `topic:npm` —— npm 包的分发 / 分包 / 安装机制这一主题域。
+- `topic:deepseek` —— DeepSeek（模型 / API / Anthropic 兼容端点）这一主题域。
 
 ### `form:`（形态）
 
