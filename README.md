@@ -12,8 +12,10 @@
 
 本项目以 [CometixSpace/claude-code](https://github.com/CometixSpace/claude-code) 作为重要基线。
 
-感谢上游作者的工作。这个项目提供了一条非常关键的路径：让 Claude Code 的发布产物不再只是一个孤立的黑盒，而是可以和源码线索、补丁过程、重组结构以及实际 npm 安装形态放在一起对照研究。对我来说，这不是一个可有可无的参考，而是后续深入研究 Claude Code 时必须保留的起点之一。
+感谢上游作者 [Haleclipse](https://github.com/Haleclipse) 的工作。这个项目提供了一条非常关键的路径：让 Claude Code 的发布产物不再只是一个孤立的黑盒，而是可以和源码线索、补丁过程、重组结构以及实际 npm 安装形态放在一起对照研究。对我来说，这不是一个可有可无的参考，而是后续深入研究 Claude Code 时必须保留的起点之一。
 
 因此，`CometixSpace-claude-code` 会以 Git submodule 的形式存在于本仓库中。这里选择引用上游，而不是 fork 上游，是因为两个项目的重心并不相同：上游项目提供基础工程和关键路线，本仓库则用于沉淀我自己的 Claude Code 研究记录、实验过程和后续判断。
 
 这个引用既是技术上的基线，也是明确的致谢。后续无论本仓库继续研究 Claude Code 的哪个方向，CometixSpace 的工作都会作为重要参照被保留下来。
+
+感谢 [LINUX DO](https://linux.do/) 社区提供的交流氛围与开源推广支持。
