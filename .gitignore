@@ -1,6 +1,9 @@
 # Local/private research material.
 private/
 
+# Vision test material (screenshots/recordings for grok-vision skill tests).
+demos/*/.vision/
+
 # Generated npm/global-prefix materialization output.
 artifacts/
 
