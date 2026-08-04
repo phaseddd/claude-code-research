@@ -503,3 +503,356 @@ body {
   font-size: 0.85rem;
   color: var(--act3);
 }
+
+/* ---------- HUD 覆盖层（M2） ----------
+   底部流水线轨道：8 节点（字即图形 = 序号字符）+ 站标题 + 数字滚动。
+   常驻不抢戏（参照零大学固定 HUD）：半透明暗底面板，节点是唯一可交互点。 */
+
+.hud {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30; /* 高于三幕骨架覆盖层（20），低于任何弹层 */
+  pointer-events: none; /* 整条不挡滚动，只有节点可点 */
+}
+
+/* 底部暗场：星云粒子会穿过 HUD 区抢节点注意力，底部渐隐黑场把仪器区与场景
+   分离（grok 观感反馈 2026-08-05：节点/填充与粒子混叠）。::before 先绘制，
+   不遮节点（节点 position:relative z-index:1） */
+.hud::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(5, 7, 13, 0.6) 100%);
+  pointer-events: none;
+}
+
+/* 随幕微染：--hud-accent 由 data-act（hud.js setSeg 写入）驱动，带 alpha 的
+   rgba（JS 此前 setProperty 写 hex 不透明值 → 光晕过浓且未达预期，2026-08-05
+   grok 复验"微染基本没有"；改为 CSS 侧三幕色 + 底部 accent 细线） */
+.hud {
+  --hud-accent: rgba(125, 211, 252, 0.5); /* 默认第一幕：青 */
+  --hud-tint: #e8ecf4; /* 标题/数字文字色微染（act1 默认白） */
+}
+.hud[data-act='act2'] {
+  --hud-accent: rgba(139, 92, 246, 0.7); /* 第二幕：青紫（0.55 边框太淡） */
+  --hud-tint: #a78bfa; /* 明显紫（原 #cfc1ff 与白字色差太小，视频压缩后不可分辨） */
+}
+.hud[data-act='act3'] {
+  --hud-accent: rgba(245, 185, 66, 0.7); /* 第三幕：琥珀 */
+  --hud-tint: #ffcf7d; /* 明显琥珀 */
+}
+
+.hud-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2.2vw;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 1.6vh 4vw 2.6vh;
+}
+
+/* 底部 accent 细线：随幕色的发光基线（微染的信号，一眼可见：
+   第二幕紫、第三幕琥珀，与星云同呼吸）。3px + 更强辉光 */
+.hud-bar::after {
+  content: '';
+  position: absolute;
+  left: 4vw;
+  right: 4vw;
+  bottom: 1.6vh;
+  height: 3px;
+  border-radius: 1.5px;
+  background: linear-gradient(90deg, transparent, var(--hud-accent), transparent);
+  box-shadow: 0 0 12px var(--hud-accent);
+  pointer-events: none;
+}
+
+/* 站标题：当前幕名；gate 过渡态显示 旧幕 → 新幕。
+   文字色与光晕都随幕微染（--hud-tint / --hud-accent，data-act 驱动）——
+   grok 三轮复验"标题始终偏白"，光晕 16px 在白字上感知弱，文字色直接染色 */
+.hud-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--hud-tint, var(--text));
+  text-shadow: 0 0 16px var(--hud-accent, rgba(125, 211, 252, 0.3));
+  white-space: nowrap;
+}
+
+.hud-arrow {
+  font-style: normal;
+  color: var(--mono);
+  margin: 0 0.35em;
+}
+
+/* 轨道：rail 绝对定位在节点中心线上，节点 flex 等分布位 */
+.hud-track {
+  position: relative;
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 15px; /* 与 rail left/right 对齐：首末节点中心 = 15px */
+  pointer-events: auto;
+}
+
+.hud-rail {
+  position: absolute;
+  left: 15px;
+  right: 15px;
+  top: 50%;
+  height: 3px; /* 2px 在整屏/视频里过细（grok 复验），加粗到 3px */
+  transform: translateY(-50%);
+  background: rgba(125, 211, 252, 0.13);
+  border-radius: 1.5px;
+}
+
+/* 已完成部分的轨道填充：青色渐隐 → 尾段染幕色（数据已流过的量感 + 宇宙仪器感）。
+   --hud-accent 由 hud.js 按幕写入 */
+.hud-rail-fill {
+  position: absolute;
+  inset: 0;
+  width: 0%; /* JS 按当前幕起点节点更新 */
+  background: linear-gradient(90deg, rgba(125, 211, 252, 0.9), var(--hud-accent, rgba(125, 211, 252, 0.3)));
+  box-shadow: 0 0 10px rgba(125, 211, 252, 0.5);
+  border-radius: 1px;
+  transition: width 0.6s cubic-bezier(0.2, 0.6, 0.3, 1);
+}
+
+/* gate 过渡扫光：流水线在运转的能量带（白核 + 青边 + 拖尾，从左往右反复扫）。
+   grok 四轮复验都报"扫光不可见"——但实测动画在跑、截图清晰可见（m2-08），
+   判定差异来自视频链路：180×14px 在 2561px 画面中占比小（7%×1.1%），H.264
+   压缩后细长亮条被平滑掉。对策：加大到轨道宽 ~80%（300px）、18px 高、白核
+   纯白无渐变衰减、1.2s 一往复（更快 = 抽帧更易命中）——任何抽帧都躲不掉 */
+.hud-flow {
+  position: absolute;
+  top: 50%;
+  width: 300px;
+  height: 18px;
+  transform: translateY(-50%);
+  border-radius: 9px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(125, 211, 252, 0.55) 25%,
+    rgba(125, 211, 252, 0.95) 40%,
+    #ffffff 50%,
+    rgba(125, 211, 252, 0.95) 60%,
+    rgba(125, 211, 252, 0.55) 75%,
+    transparent 100%
+  );
+  filter: drop-shadow(0 0 14px rgba(125, 211, 252, 1));
+  opacity: 0;
+}
+
+.hud.is-gating .hud-flow {
+  opacity: 1;
+  animation: hud-flow 1.2s linear infinite;
+}
+
+@keyframes hud-flow {
+  from {
+    left: 0%;
+  }
+  to {
+    left: calc(100% - 300px);
+  }
+}
+
+/* 节点：圆 + 序号字符（字即图形）。状态机见 hud.js 头注释。
+   34px：原 30px 在整屏画面里偏小，远看三态要仔细辨（grok 观感反馈 2026-08-05） */
+.hud-node {
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(232, 236, 244, 0.22);
+  background: rgba(5, 7, 13, 0.72);
+  color: rgba(232, 236, 244, 0.38);
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: border-color 0.25s ease, color 0.25s ease, background 0.25s ease,
+    box-shadow 0.25s ease, transform 0.25s cubic-bezier(0.2, 0.6, 0.3, 1);
+}
+
+/* 已完成幕：青色实心 + 辉光（数据已流过） */
+.hud-node.is-done {
+  border-color: rgba(125, 211, 252, 0.75);
+  background: rgba(125, 211, 252, 0.92);
+  color: #05070d;
+  box-shadow: 0 0 12px rgba(125, 211, 252, 0.4);
+}
+
+/* 当前幕其余节点：半亮（幕内即将展开）。边框随幕微染（--hud-accent）——
+   青色 = 已完成的流水线数据，幕色 = 正在发生的幕 */
+.hud-node.is-in {
+  border-color: var(--hud-accent, rgba(125, 211, 252, 0.5));
+  color: rgba(232, 236, 244, 0.85);
+  box-shadow: inset 0 0 8px var(--hud-accent, rgba(125, 211, 252, 0.2));
+}
+
+/* 当前幕起点：白亮 + 呼吸脉冲（正在发生）。光晕双层 = 幕色 + 白（grok 复验
+   "脉冲仍克制"：scale 1.18↔1.34 + 光晕 14px↔34px 随幕色，1.6s 循环） */
+.hud-node.is-cur {
+  border-color: #ffffff;
+  color: #ffffff;
+  background: rgba(125, 211, 252, 0.16);
+  animation: hud-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes hud-pulse {
+  0%,
+  100% {
+    transform: scale(1.18);
+    box-shadow: 0 0 14px var(--hud-accent, rgba(125, 211, 252, 0.5)),
+      0 0 24px rgba(255, 255, 255, 0.22);
+  }
+  50% {
+    transform: scale(1.34);
+    box-shadow: 0 0 34px var(--hud-accent, rgba(125, 211, 252, 0.95)),
+      0 0 52px rgba(255, 255, 255, 0.3);
+  }
+}
+
+.hud-node:hover {
+  border-color: var(--mono);
+  color: var(--mono);
+  background: rgba(125, 211, 252, 0.1);
+  box-shadow: 0 0 16px rgba(125, 211, 252, 0.45);
+  transform: scale(1.1);
+}
+
+/* 键盘焦点（可达性）：青色焦点环，与 .hold-hit 一致的语言 */
+.hud-node:focus-visible {
+  outline: 2px solid var(--mono);
+  outline-offset: 3px;
+}
+
+/* 节点 tooltip：hover / 键盘聚焦显示站名（等宽小字 + 数据面板感）。
+   --shift 由 hud.js 对首尾节点设置，防止居中 tooltip 溢出屏幕 */
+.hud-node::after {
+  content: attr(data-title);
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  padding: 0.3em 0.7em;
+  background: rgba(10, 14, 24, 0.94);
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(-50% + var(--shift, 0px))) translateY(4px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55), 0 0 12px rgba(125, 211, 252, 0.12);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+/* tooltip 锚点三角：与面板同宽于节点中心；--shift 同步平移（否则边缘修正后三角错位） */
+.hud-node::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+  border-top-color: rgba(125, 211, 252, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(var(--shift, 0px)) translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.hud-node:hover::after,
+.hud-node:focus-visible::after,
+.hud-node:hover::before,
+.hud-node:focus-visible::before {
+  opacity: 1;
+  transform: translateX(calc(-50% + var(--shift, 0px))) translateY(0);
+}
+
+.hud-node:hover::before,
+.hud-node:focus-visible::before {
+  transform: translateX(var(--shift, 0px)) translateY(0);
+}
+
+/* 数字滚动计数器：当前站号 / 8（站间推进的即时反馈计量）。
+   数字随幕色微染（--hud-accent） */
+.hud-counter {
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.hud-num {
+  display: inline-block;
+  min-width: 1.2em;
+  text-align: right;
+  color: var(--hud-tint, var(--mono)); /* 文字色随幕微染（同标题） */
+  font-size: 1.2rem;
+  font-weight: 700;
+  text-shadow: 0 0 12px var(--hud-accent, rgba(125, 211, 252, 0.6));
+}
+
+/* 入场：节点逐个上浮浮现（--i 供 stagger），标题与计数同入 */
+.hud-enter .hud-node {
+  animation: hud-node-in 0.45s cubic-bezier(0.2, 0.6, 0.3, 1) backwards;
+  animation-delay: calc(var(--i) * 0.05s + 0.15s);
+}
+
+.hud-enter .hud-title,
+.hud-enter .hud-counter {
+  animation: hud-node-in 0.45s cubic-bezier(0.2, 0.6, 0.3, 1) backwards;
+  animation-delay: 0.1s;
+}
+
+@keyframes hud-node-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* 尊重动效偏好：关掉脉冲 / 扫光 / 入场 stagger（可访问性） */
+@media (prefers-reduced-motion: reduce) {
+  .hud-node.is-cur {
+    animation: none;
+  }
+  .hud.is-gating .hud-flow {
+    animation: none;
+    opacity: 0.5;
+  }
+  .hud-enter .hud-node,
+  .hud-enter .hud-title,
+  .hud-enter .hud-counter {
+    animation: none;
+  }
+}
+
+/* 窄屏：标题让位给轨道（标题信息已在骨架覆盖层），只留轨道 + 计数 */
+@media (max-width: 720px) {
+  .hud-title {
+    display: none;
+  }
+  .hud-bar {
+    gap: 1vw;
+    padding: 1.4vh 3vw 2vh;
+  }
+}

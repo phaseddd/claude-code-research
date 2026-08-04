@@ -46,7 +46,9 @@ export default defineConfig({
     watch: {
       // build 产物（npm run build 写 dist/）不参与 dev watch：
       // 否则 dev 会话中每次构建都触发 full-reload 打断页面
-      ignored: ['**/dist/**'],
+      ignored: ['**/dist/**', '**/.vision/**'],
+      // .vision/ 同理（截图/录屏素材目录）：chrome-devtools MCP 录屏写 webm
+      // 到 .vision/ 时若被 watch，full-reload 会打断正在录制的页面（实测）
     },
   },
 })

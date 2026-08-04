@@ -7,6 +7,7 @@ import { mountPrologue } from './prologue.js'
 import { createScroll } from './scroll.js'
 import { createTimeline } from './timeline.js'
 import { createActSkeleton } from './scenes/act-skeleton.js'
+import { createHud } from './hud.js'
 import { COLORS } from './theme.js'
 
 // 尊重动效偏好：黑场三段式淡入在 reduce 下直接呈现
@@ -87,10 +88,11 @@ function makeFadeGate({ id }) {
       }
     },
     update() {},
-    // 离开 gate 时兜底归 1：淡入末值因采样步进可能略小于 1，避免残留半透明
-    teardown(ctx) {
-      ctx.fadeScene(1)
-    },
+    // 离开 gate 时透明度不再写回（2026-08-05 修复，PLAN §4.1）：
+    // 归 1 统一由 timeline 接管 —— 自然走完时时间驱动 scrub 已在末帧写 1；
+    // 被打断（wheel 硬切）时由 switchTo 的接续补间从当前值平滑到 1；
+    // skipTo 显式跳转由 force 分支瞬间归 1。teardown 写回会与接续补间互相覆盖 → 抖动
+    teardown() {},
   }
 }
 
@@ -125,11 +127,21 @@ const totalVh = segments.reduce((a, s) => a + s.scrollVh, 0)
 // ---------- 引擎装配（序章按住完成后创建；回到序章时销毁） ----------
 let timeline = null // 当前时间轴实例（回到序章 → dispose 置空）
 let scroll = null // 虚拟滚动控制器（与 timeline 同生命周期）
+let hud = null // HUD 覆盖层（M2：8 节点轨道 + 站标题 + 数字滚动；与 timeline 同生命周期）
 
 function bootTimeline() {
   // 虚拟滚动：wheel / 触屏 / 键盘 → targetVh；lerp 平滑 → 每帧喂给时间轴
   scroll = createScroll({ max: totalVh, onFrame: onScrollFrame })
-  timeline = createTimeline({ segments, scroll, fadeScene: (v) => { sceneEl.style.opacity = String(v) } })
+  // HUD 覆盖层：节点点击 → 跳到对应幕（segments 是模块级常量，直接查）
+  hud = createHud({ uiEl, onSelect: (segId) => timeline?.skipTo(segId) })
+  timeline = createTimeline({
+    segments,
+    scroll,
+    fadeScene: (v) => { sceneEl.style.opacity = String(v) },
+    // 段切换联动 HUD：gate 段进入过渡态（标题 旧幕 → 新幕 + 轨道扫光），
+    // 幕段进入更新节点点亮 / 标题 / 数字滚动
+    onSegmentChange: (prev, next) => hud.setSeg(next.id, prev?.id),
+  })
   // 落位第一幕（skipTo 复位位置；创建时已 enter，此处幂等）
   timeline.skipTo('act1')
   // 黑场三段式：场景先置 0（黑场）→ 停顿 0.3s → 淡入（电影化过渡，避免硬切换）。
@@ -144,10 +156,12 @@ function onScrollFrame(current, target, dt) {
   timeline?.onFrame(current, target, dt)
 }
 
-// 回到序章：销毁时间轴与滚动 → 重置黑场态 → 重新挂载序章
+// 回到序章：销毁时间轴 / HUD / 滚动 → 重置黑场态 → 重新挂载序章
 function backToPrologue() {
   timeline?.dispose()
   timeline = null
+  hud?.dispose()
+  hud = null
   scroll?.dispose()
   scroll = null
   sceneEl.style.opacity = '1' // 重置黑场态，供下次进入复用
