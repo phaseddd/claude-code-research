@@ -2,7 +2,7 @@
 private/
 
 # Vision test material (screenshots/recordings for grok-vision skill tests).
-.vision/
+demos/*/.vision/
 
 # Generated npm/global-prefix materialization output.
 artifacts/
