@@ -14,7 +14,7 @@ export const COLORS = {
 }
 
 export const FONTS = {
-  display: "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+  display: "'Playfair Display', 'Times New Roman', serif", // 西文命令图形（对应 PLAN 主标题字体决策）
   body: "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
   mono: "'JetBrains Mono', ui-monospace, Consolas, monospace",
 }

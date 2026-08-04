@@ -56,6 +56,7 @@ export function createHoldButton({
     hitEl.removeEventListener('lostpointercapture', onLostCapture)
     hitEl.removeEventListener('keydown', onKeyDown)
     hitEl.removeEventListener('keyup', onKeyUp)
+    window.removeEventListener('blur', onWindowBlur)
     document.removeEventListener('pointerup', onPointerUp)
     document.removeEventListener('pointercancel', onPointerCancel)
     el.classList.remove('is-dragging')
@@ -152,19 +153,28 @@ export function createHoldButton({
     if (e.key !== ' ' && e.key !== 'Enter') return
     if (e.repeat) return
     e.preventDefault()
+    if (activePointerId !== null && activePointerId !== 'keyboard') return // 指针按住中忽略键盘，避免误按干扰
     startHold('keyboard')
   }
 
   const onKeyUp = (e) => {
     if (e.key !== ' ' && e.key !== 'Enter') return
     e.preventDefault()
+    if (activePointerId !== 'keyboard') return // 只终止键盘按住（指针按住不受键盘 keyup 影响）
     stopHold()
+  }
+
+  // 失焦兜底：键盘按住中窗口失焦 → keyup 丢失，进度可能走满自动完成；
+  // blur 时停止推进（500ms 续接窗口内回来再按可续接）
+  const onWindowBlur = () => {
+    if (activePointerId === 'keyboard') stopHold()
   }
 
   hitEl.addEventListener('pointerdown', onPointerDown)
   hitEl.addEventListener('lostpointercapture', onLostCapture)
   hitEl.addEventListener('keydown', onKeyDown)
   hitEl.addEventListener('keyup', onKeyUp)
+  window.addEventListener('blur', onWindowBlur)
   document.addEventListener('pointerup', onPointerUp)
   document.addEventListener('pointercancel', onPointerCancel)
 

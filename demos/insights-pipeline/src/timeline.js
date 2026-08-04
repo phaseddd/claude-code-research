@@ -108,10 +108,13 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null 
       }
     },
     preEnterNext() {
-      // 幂等：gate 淡入前预挂下一段场景；目标段已是激活段则跳过
+      // 幂等：gate 淡入前预挂下一段场景；目标段已是激活段则跳过。
+      // 反向穿越守卫：next === pending（被 deferPrev 推迟的上一段）时不预挂——
+      // 它仍挂载在 DOM，二次 enter 会创建重复实例（skel 覆盖 → 旧实例孤儿泄漏、
+      // teardown 误杀新实例 → 该幕空白）
       if (preEnteredSeg) return
       const next = segs[activeIndex() + 1]
-      if (next && next !== active) {
+      if (next && next !== active && next !== pending) {
         next.enter?.(ctx)
         preEnteredSeg = next
       }

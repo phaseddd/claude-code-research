@@ -243,6 +243,17 @@ demos/insights-pipeline/
 | 视频混合 | v2 增强（M0~M6 纯 WebGL shader） |
 | 里程碑 | M0~M7 按幕拆分（本表） |
 
+### 4.1 已知问题与后续打磨
+
+| 归属 | 问题 | 来源 |
+|---|---|---|
+| M2（碰 timeline 时） | gate 淡入可被 wheel 硬切 + 亮度回写抖动：段切换由 target 驱动、淡入由 current 驱动，两者不一致 | 2026-08-05 代码锚点核查 |
+| M6 打磨 | reduce 模式下 gate 过渡仍按 3.5s 缓动推进，未"直接呈现"（README 声明与实现不符） | 同上 |
+| M6 打磨 | 实机 60fps 验证：录屏观感流畅，需 Performance 面板确认粒子 + gate 动画不掉 50fps | grok 视频验收 |
+| M6 打磨 | 第三幕金色粒子与白色标题对比偏弱（降粒子亮度或加轻微暗角） | 同上 |
+| M6 打磨 | 按住进度环接近满时加 scale/光晕脉冲（锦上添花） | 同上 |
+| 内容落地时 | 降级静态页缺八站要点（PLAN §3 降级策略规格：背景文案 + 八站要点 + 知识页链接三项） | 代码锚点核查 |
+
 ## 5. 关联知识页
 
 - [Claude Code /insights 命令全程解析](../../analysis/mechanisms/claude-code-insights-slash-command.md)

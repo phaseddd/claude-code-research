@@ -69,9 +69,12 @@ export function createScroll({ max = 0, onFrame = null, wheelFactor = WHEEL_FACT
   // wheel：deltaY 像素 → vh（÷视口高）；deltaMode 1（行）/ 2（页）先换算成像素；
   // 单帧增量 clamp ±WHEEL_CLAMP（对齐零站点，防甩动滚轮瞬间跳段）
   const onWheel = (e) => {
-    let px = Math.max(-WHEEL_CLAMP, Math.min(WHEEL_CLAMP, e.deltaY))
+    // 先换算 deltaMode（行/页 → 像素）再 clamp：clamp 须作用于换算后的 px，
+    // 否则行/页模式单事件可瞬间跨整条时间轴
+    let px = e.deltaY
     if (e.deltaMode === 1) px *= 16
     else if (e.deltaMode === 2) px *= window.innerHeight
+    px = Math.max(-WHEEL_CLAMP, Math.min(WHEEL_CLAMP, px))
     bump((px * wheelFactor) / window.innerHeight)
   }
 

@@ -132,7 +132,9 @@ function bootTimeline() {
   timeline = createTimeline({ segments, scroll, fadeScene: (v) => { sceneEl.style.opacity = String(v) } })
   // 落位第一幕（skipTo 复位位置；创建时已 enter，此处幂等）
   timeline.skipTo('act1')
-  // 黑场三段式：场景先以黑场呈现，停顿 0.3s 再淡入（电影化过渡，避免硬切换）
+  // 黑场三段式：场景先置 0（黑场）→ 停顿 0.3s → 淡入（电影化过渡，避免硬切换）。
+  // 注：sceneEl 初始 opacity 为 1，不先置 0 则 gsap 1→1 是空操作，黑场停顿缺失
+  sceneEl.style.opacity = '0'
   gsap.to(sceneEl, { opacity: 1, duration: reducedMotion ? 0.01 : 0.5, delay: reducedMotion ? 0 : 0.3 })
 }
 
