@@ -1094,7 +1094,12 @@ body:has(.hud[data-act='act3']) {
   inset: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* 构图(2026-08-05 主人实测修复):面板居中时,河源头在面板底、河向上流,
+     投影整条落在面板正背后 —— 面板半透明透出粒子 = 「粒子和面板叠在一起」,
+     盖/遮/压都是打补丁。终端移到左侧(命令入口),河主体在屏幕中央偏右
+     (路径 P1~P4 投影 ≈786~907px,不随面板动),源头锚点自动跟随面板底,
+     河从面板底边冒出斜向右上,全程不被遮挡 */
+  align-items: flex-start;
 }
 
 /* 终端面板：半透明 + 冷色细边 + 圆角小（简报 §4 终端细节）；
@@ -1102,8 +1107,11 @@ body:has(.hud[data-act='act3']) {
 .s1-terminal {
   position: relative;
   margin-top: 55vh;
+  margin-left: 6vw; /* 面板居左(命令入口),河主体在中央偏右 —— 构图错开 */
   width: min(520px, calc(100vw - 48px));
-  background: rgba(8, 12, 20, 0.72);
+  /* 背景 0.72 → 0.85:面板与河错开后,面板内只剩源头小段粒子,
+     0.85 遮住面板内透出,保留玻璃质感(2026-08-05 构图修复配套) */
+  background: rgba(8, 12, 20, 0.85);
   border: 1px solid rgba(90, 140, 200, 0.12);
   border-radius: 10px;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04);
@@ -1290,6 +1298,24 @@ body:has(.hud[data-act='act3']) {
   opacity: 0;
 }
 
+/* 命中/注入完成的斩截闪(影评人 2026-08-05:「命中要有身体感,别只加两行字」;
+   MATCH 浮现与进度条走满两处复用;动画一次性,100% 帧回初始 shadow) */
+.s1-hit-flash {
+  animation: s1-hit-flash 0.15s ease-out;
+}
+@keyframes s1-hit-flash {
+  0% {
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04);
+  }
+  50% {
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04),
+      0 0 24px rgba(125, 211, 252, 0.55), 0 0 0 1px rgba(125, 211, 252, 0.5);
+  }
+  100% {
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04);
+  }
+}
+
 /* 扫描线：仅面板内 1px、3~5% opacity（简报 §4 克制细节：全局扫线会土） */
 .s1-scanline {
   position: absolute;
@@ -1314,9 +1340,41 @@ body:has(.hud[data-act='act3']) {
 
 /* 站内文案区（面板下方；0.20~0.75 随滚动浮现，scrub 驱动；文案逐字锚定简报 §4） */
 .s1-copy {
+  position: relative; /* ::before 衬底定位锚(与 .s2-copy 同款) */
   margin-top: 6vh;
+  margin-left: auto; /* 面板居左后,文案区仍居中(阅读习惯;衬底遮粒子) */
+  margin-right: auto;
   width: min(640px, calc(100vw - 48px));
   text-align: center;
+}
+
+/* 字永远净(简报 §1.4-6):河源头粒子团在面板下方,与文案区交叠 ——
+   柔暗衬底压暗粒子,文字锐利(与 .s2-copy::before 同手法,2026-08-05
+   主人实测「文案区盖住粒子」) */
+.s1-copy::before {
+  content: '';
+  position: absolute;
+  inset: -18px -36px;
+  z-index: -1;
+  background: radial-gradient(
+    ellipse 62% 56% at 50% 45%,
+    rgba(5, 7, 13, 0.55),
+    transparent 72%
+  );
+}
+
+/* 矮视口(≤950px 高):面板/文案区用固定值整体上移,避开底部 HUD 轨道
+   (2026-08-05 主人实测:850px 视口下注记文案与 HUD 重叠 34px、终端面板
+   内容被视口裁切 —— 布局溢出同一根因)。vh 值在矮视口下仍溢出
+   (42vh 面板底 619 + 文案 178 = 797 侵入 HUD 780),固定 110px 起:
+   面板 110~372 + 文案 390~568,768px 视口(HUD ≈698)仍余 130px */
+@media (max-height: 950px) {
+  .s1-terminal {
+    margin-top: 110px;
+  }
+  .s1-copy {
+    margin-top: 18px;
+  }
 }
 
 /* 大字核心句 */

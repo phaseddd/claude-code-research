@@ -106,7 +106,7 @@ const EDGE_SLOW = 0.25 // 边缘粒子更慢:流速衰减系数(简报 §3.1「�
 // 流速(t/s):沿路径参数每秒增量。视野内河段 ≈0.3t,除以流速 = 过视野秒数
 //   vS1 0.10(点亮后加速「唰」)/ vS2 0.07(从星云抽出略慢显「拽」)/ vS3 0.085(主段)
 //   分叉后 0.06(分流后减速入盒)—— 简报 §3.3.1 的 1.4~1.6 等抽象速按此换算
-const FLOW = { s1: 0.1, s2: 0.07, s3: 0.085, s3split: 0.06, idle: 0.045 }
+const FLOW = { s1: 0.1, s2: 0.07, s3: 0.085, s3split: 0.06, warm: 0.07, idle: 0.045 }
 
 // 河宽(简报 §2.1 / §3.3.3):w = wMin + k × log1p(infoVolume)
 //   infoVolume = tokens/1000(sessions.js STATS 供给);源头窄由 widthEnv 包络(×0.45)承担
@@ -207,6 +207,9 @@ const VERT = /* glsl */ `
     float injProg = (uTime - uWidthInjTime) * W_INJ_SPEED;
     float wMix = 1.0 - smoothstep(injProg - W_INJ_BAND, injProg + W_INJ_BAND, t);
     float halfW = mix(uRiverWidthOld, uRiverWidth, wMix) * widthEnv;
+    // 波浪前锋微亮(影评人三连 2026-08-05:「变宽像粒子特效,没有信息量释放感」):
+    // 宽度过渡带(t≈injProg)粒子亮度 +30% —— 波浪「推过去」的能量可见
+    float waveGlow = smoothstep(-W_INJ_BAND, 0.0, t - injProg) * (1.0 - smoothstep(0.0, W_INJ_BAND * 1.5, t - injProg));
 
     // 高斯截面偏移 + 呼吸扰动(双正弦叠加,幅度 0.04~0.08 × 河宽,频率 0.6~1.2)
     vec3 t0 = sampleCurve(uPathMain, clamp(t - 0.01, 0.0, 1.0));
@@ -260,6 +263,7 @@ const VERT = /* glsl */ `
       // facet 支提亮 150%(逐轮上调:30→60→80→120 仍偏淡;additive 下亮度 >1 允许)
       c *= 1.0 + 1.5 * aBranch * smoothstep(uForkT, 1.0, t);
     }
+    c *= 1.0 + 0.3 * waveGlow; // 波浪前锋能量(注入期短暂可见,传播完 waveGlow=0)
     vColor = c;
 
     // 吸收(软粒子,简报 §3.3.6):接近盒的粒子 alpha 渐隐(距离场平滑过渡 ≈0.15s),
