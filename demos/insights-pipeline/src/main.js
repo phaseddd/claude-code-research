@@ -43,24 +43,24 @@ const uiEl = document.createElement('div')
 uiEl.id = 'ui'
 appEl.appendChild(uiEl)
 
-// ---------- 3D 装配（第一幕真实场景；与 timeline 同生命周期） ----------
-// 透明 canvas 透出 body 背景 #05070d（简报 §2.3 背景禁止纯黑,现有底色已符合）；
-// 无光照场景,粒子/星云自发光（AdditiveBlending）,不需要灯光
-const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true })
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)) // DPR 钳制 2(简报 §3.1)
-renderer.setSize(window.innerWidth, window.innerHeight)
-sceneEl.appendChild(renderer.domElement)
-
-const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200)
-camera.position.set(0, 0.7, 18.5) // 初始:S1 源头近景(各站 enter 再定位)
+// ---------- 3D 装配（第一幕真实场景；引擎级生命周期,随 bootTimeline 创建） ----------
+// 透明 canvas 透出 body 背景（简报 §2.3 背景禁止纯黑）；无光照场景,
+// 粒子/星云自发光（AdditiveBlending）,不需要灯光。
+// 2026-08-05 修复(主人实测)二连:「重新体验」后再次进入粒子河消失。
+//   第一弹:shared.river 复用 → 旧纹理 immutable 报错(已修:backToPrologue 置空重建);
+//   第二弹(本次):renderer 原是模块级常量只 append 一次,backToPrologue 里
+//     domElement.remove() 后再次进入不重新挂载 → #scene 无 canvas,3D 层整个消失
+//     (无 GL 报错、无粒子)。修复:renderer/scene/camera 全部随引擎会话创建销毁,
+//     shared 的 scene/camera 字段每次赋值(场景模块运行时取 shared 最新值)。
+let renderer = null // 引擎三件套(bootTimeline 新建 / backToPrologue 销毁)
+let scene = null
+let camera = null
 
 const onResize = () => {
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
   renderer.setSize(window.innerWidth, window.innerHeight)
 }
-window.addEventListener('resize', onResize)
 
 // ---------- 段配置 ----------
 // 每段 scrollVh 为虚拟滚动预算（vh 单位）：滚完本段 → gate 自动过渡 → 下一段
@@ -75,7 +75,7 @@ const LIGHT_GATE_DURATION = 1.8 // 幕内轻量 gate（秒,简报 §6.1:1.5~2s�
 // river 生命周期 = 第一幕全程（简报 §6.1:进入 S1 创建,离开 S3 时 teardown）:
 // 由 s1 段 enter 创建、s3 段 teardown 销毁（s3 teardown 被 gate1to2 的 deferPrev
 // 推迟到黑场中段执行,黑场里河已不可见,衔接安全）
-const shared = { scene, camera, uiEl, river: null }
+const shared = { scene: null, camera: null, uiEl, river: null } // scene/camera 随引擎会话赋值
 
 // 站级场景段：enter 构建场景 → scrub 站内滚动编排 → update 每帧 idle → teardown 释放
 function makeSceneSegment({ id, create, scrollVh }) {
@@ -196,6 +196,18 @@ let scroll = null // 虚拟滚动控制器（与 timeline 同生命周期）
 let hud = null // HUD 覆盖层（M2：8 节点轨道 + 站标题 + 数字滚动；与 timeline 同生命周期）
 
 function bootTimeline() {
+  // 引擎三件套:全新 renderer/scene/camera(「重新体验」后旧实例已销毁,
+  // 新 canvas 重新挂载 —— 避免旧 GL 资源/旧 DOM 残留)
+  renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true })
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)) // DPR 钳制 2(简报 §3.1)
+  renderer.setSize(window.innerWidth, window.innerHeight)
+  sceneEl.appendChild(renderer.domElement)
+  scene = new THREE.Scene()
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200)
+  camera.position.set(0, 0.7, 18.5) // 初始:S1 源头近景(各站 enter 再定位)
+  shared.scene = scene
+  shared.camera = camera
+  window.addEventListener('resize', onResize)
   // 虚拟滚动：wheel / 触屏 / 键盘 → targetVh；lerp 平滑 → 每帧喂给时间轴
   scroll = createScroll({ max: totalVh, onFrame: onScrollFrame })
   // HUD 覆盖层：节点点击 → 跳到对应站/幕（segments 是模块级常量，直接查）
@@ -233,9 +245,23 @@ function backToPrologue() {
   hud = null
   scroll?.dispose()
   scroll = null
+  // 2026-08-05 修复(主人实测):「重新体验」回序章后再次进入,粒子河全灭,
+  // console 报 GL_INVALID_OPERATION: glTexStorage2D: Texture is immutable。
+  // 根因:shared.river 只在 s3 teardown 销毁,从 s1 回序章时旧 river 实例
+  // (含旧 DataTexture)仍活着;renderer.dispose() 释放 GPU 资源后,再次进入
+  // s1 enter 因 !shared.river 为 false 复用旧 river,旧纹理二次 texStorage2D
+  // 打在 immutable 纹理上 → uMap 采样失败 → 粒子全透明。此处销毁并置空,
+  // 下次进入重建全新 river/纹理(renderer.dispose() 前置,先释放 JS 侧引用)
+  shared.river?.dispose()
+  shared.river = null
   window.removeEventListener('resize', onResize)
   renderer.dispose()
   renderer.domElement.remove()
+  renderer = null
+  scene = null
+  camera = null
+  shared.scene = null
+  shared.camera = null
   sceneEl.style.opacity = '1' // 重置黑场态，供下次进入复用
   bootPrologue()
 }
