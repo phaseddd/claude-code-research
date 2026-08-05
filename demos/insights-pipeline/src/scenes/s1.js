@@ -192,14 +192,42 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
     beats.to(pctEl, { opacity: 1, duration: d(0.05) }, progT)
 
     // ---- 拍4 河亮:视线焦点从终端移到河(简报 §4 拍4) ----
-    beats.call(
-      () => {
-        river?.setInfoVolume(HIT_INFO) // 命中会话信息量 ≈ 54(最老三 facet 会话 token 和 / 1000)
-        river?.setFlow('s1') // 流速切 vS1「唰」
+    // 叙事(2026-08-05 主人实测「不明所以」修复):进度条 62→100 与河变宽同步
+    // 走完 ——「加载完成的那一刻,数据注入河床」因果可视;宽度补间 1.2s
+    // (原瞬跳 0.6→1.21 突兀;0.8s 有中段「腰部鼓起」瞬态,1.2s 定稿);
+    // 注入前锋让源头先宽、波浪顺流而下(「数据从终端流入河」的物理)
+    const T0 = progT + d(0.4) + d(0.55)
+    // 记录注入时刻(reduce 守卫:uTime 冻结时记录会让前锋卡在源头,不调即瞬达)
+    beats.call(() => { if (!reducedMotion) river?.injectInfoVolume() }, [], T0)
+    // 宽度:平滑补间到信息量全量(简报 §3.3 河宽随信息量,连续量)
+    const vh = { v: river?.getInfoVolume?.() ?? 0 }
+    beats.to(
+      vh,
+      {
+        v: HIT_INFO, // 命中会话信息量 ≈ 54(最老三 facet 会话 token 和 / 1000)
+        duration: d(1.2),
+        ease: 'power2.out',
+        onUpdate: () => river?.setInfoVolume(vh.v),
       },
-      [],
-      progT + d(0.4) + d(0.55)
+      T0
     )
+    // 进度条 62→100 与宽度同起点同长同 ease(「加载完成 → 数据注入」因果)
+    beats.to(fillEl, { width: '100%', duration: d(1.2), ease: 'power2.out' }, T0)
+    const pct = { p: 62 } // textContent 不能直接补间,代理对象每帧写入
+    beats.to(
+      pct,
+      {
+        p: 100,
+        duration: d(1.2),
+        ease: 'power2.out',
+        onUpdate: () => {
+          pctEl.textContent = Math.round(pct.p) + '%'
+        },
+      },
+      T0
+    )
+    // 流速仍瞬切(「唰」是流速语义,不参与宽度补间;简报 §4 拍4)
+    beats.call(() => river?.setFlow('s1'), [], T0)
 
     return beats
   }

@@ -131,6 +131,8 @@ const VERT = /* glsl */ `
   uniform float uTime;
   uniform float uFlowSpeed;
   uniform float uRiverWidth;   // 半宽(世界单位,信息量驱动)
+  uniform float uWidthInjTime; // 信息量注入时刻(前锋传播起点,默认 -1e3 = 已扫完全河)
+  uniform float uRiverWidthOld; // 注入瞬间旧宽快照(前锋扫过区 = 新宽,未扫区 = 旧宽)
   uniform float uForkT;        // 分叉切换点(= FORK_T,色过渡带起点)
   uniform float uBranchOn;     // 分叉 morph 0~1(简报 §4.3:0.45~0.65s easeInOutCubic)
   uniform float uMetaNarrow;   // 分支宽度窄化:meta 0.75 / facet 0.45(简报 §2.5 流量比)
@@ -189,10 +191,22 @@ const VERT = /* glsl */ `
       pos = mix(pos, bp, uBranchOn);
     }
 
-    // 宽度叙事:源头窄(×0.45)→ 中段全宽 → 分叉前收窄(×0.6);分支再按支窄化
-    float widthEnv = mix(0.45, 1.0, smoothstep(0.0, 0.15, t)) * mix(1.0, 0.6, smoothstep(0.7, 1.0, t));
+    // 宽度叙事:源头略窄(×0.65)→ 中段全宽 → 分叉前收窄(×0.6);分支再按支窄化
+    // 2026-08-05 修正:原源头 ×0.45 + 0.15 快过渡 = 「细头胖肚」大肚子观感
+    // (主人实测「中间一小段密集怪怪的」+ grok 视频复核两轮);0.65 + 0.25 缓坡,
+    // 源头仍略窄(语义不破)但反差收敛
+    float widthEnv = mix(0.65, 1.0, smoothstep(0.0, 0.25, t)) * mix(1.0, 0.6, smoothstep(0.7, 1.0, t));
     if (inFork) widthEnv *= aBranch < 0.5 ? uMetaNarrow : uFacetNarrow;
-    float halfW = uRiverWidth * widthEnv;
+    // 信息量注入前锋(2026-08-05):源头先变宽、波浪顺流而下(「数据从终端流入河」的
+    // 物理)。wMix = 1 - smoothstep(前锋±带, t):t 在波浪扫过区(<前锋) = 新宽,
+    // 未扫区 = 旧宽。速度 0.5 t/s(全河 2s,肉眼读作「信号波」非「流速」);
+    // 不钳上限:传播完 injProg ≥ 1+BAND 后 wMix 恒 1,逐字节还原注入前行为。
+    // reduce 下 uTime 冻结,uWidthInjTime 保持 -1e3 默认 → wMix 恒 1(瞬达)。
+    const float W_INJ_SPEED = 0.5;
+    const float W_INJ_BAND = 0.06;
+    float injProg = (uTime - uWidthInjTime) * W_INJ_SPEED;
+    float wMix = 1.0 - smoothstep(injProg - W_INJ_BAND, injProg + W_INJ_BAND, t);
+    float halfW = mix(uRiverWidthOld, uRiverWidth, wMix) * widthEnv;
 
     // 高斯截面偏移 + 呼吸扰动(双正弦叠加,幅度 0.04~0.08 × 河宽,频率 0.6~1.2)
     vec3 t0 = sampleCurve(uPathMain, clamp(t - 0.01, 0.0, 1.0));
@@ -375,7 +389,12 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
   const uniforms = {
     uTime: { value: 0 },
     uFlowSpeed: { value: FLOW.idle },
-    uRiverWidth: { value: 0.6 },
+    // 河宽初始 = 最窄(无信息量,简报 §3.3.3 公式 W_MIN)。原 0.6 是无公式语义的
+    // 遗留值,且 S1 拍4 从 0.6 瞬跳 1.21 突兀(主人实测:河先窄后突然变宽)
+    uRiverWidth: { value: W_MIN },
+    // 注入前锋默认态 = 从未注入(-1e3):injProg ≥ 500 → wMix 恒 1,行为与无前锋等价
+    uWidthInjTime: { value: -1e3 },
+    uRiverWidthOld: { value: W_MIN },
     uForkT: { value: FORK_T },
     uBranchOn: { value: 0 },
     uMetaNarrow: { value: 0.75 }, // 分流后 meta 支 75% 宽(简报 §4.3:meta 支明显宽于 facet 支)
@@ -432,8 +451,22 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
     uniforms,
 
     // 河宽 = 信息量(w = wMin + k × log1p(vh),简报 §3.3.3);vh 为信息量(sessions STATS 供给)
+    // _infoVolume 供场景侧平滑补间起始值(S1 拍4 河亮从当前宽补到目标,2026-08-05)
     setInfoVolume(vh) {
+      this._infoVolume = vh
       uniforms.uRiverWidth.value = W_MIN + W_K * Math.log1p(vh)
+    },
+    getInfoVolume() {
+      return this._infoVolume ?? 0 // 初始无信息量(河宽 = W_MIN 最窄)
+    },
+    // 信息量注入(2026-08-05,S1 拍4 独用):记录注入时刻 + 旧宽快照 → shader 前锋
+    // 从源头顺流传播。无参:目标宽由场景侧补间经 setInfoVolume 逐帧送达,不重复
+    // 写终值。S2/S3 的持续 setInfoVolume 不调本方法,前锋永不误触发。
+    // reduce 双保险:uTime 冻结时记录冻结时刻会让前锋永远停在源头(必死),故忽略
+    injectInfoVolume() {
+      if (reducedMotion) return
+      this.uniforms.uRiverWidthOld.value = this.uniforms.uRiverWidth.value
+      this.uniforms.uWidthInjTime.value = this.uniforms.uTime.value
     },
 
     // 流速档(简报 §3.3.1 分站值):'s1' | 's2' | 's3' | 's3split' | 'idle'
