@@ -8,6 +8,28 @@
   --text-dim: rgba(232, 236, 244, 0.55);
   --mono: #7dd3fc;
   --hold: #7dd3fc;
+
+  /* 光环境(第一幕背景专用,与 theme.js 互指):
+     青相 G≥B 是硬约束 —— 暗色下色相识别退化,只有 G≥B 才读「青」而非「蓝」
+     (旧方案 B>G 全蓝语境 = 国企大屏味根因;雾暗到 12.7% 亮度时色相不可读) */
+  --bg-top: #0d1513; /* 主底顶部(暗) */
+  --bg-mid: #111b17; /* 主底中部 */
+  --bg-deep: #15241d; /* 主底底部(亮,下方有光源的物理) */
+  --fog-core: rgba(94, 192, 184, 0.78); /* 雾池核心,绿相略重 ~175° */
+  --fog-mid: rgba(62, 146, 146, 0.62);
+  --fog-rim: rgba(34, 88, 90, 0.32);
+  --airband: rgba(54, 132, 132, 0.46); /* 湿润空气带(底部 1/3~1/2) */
+  --airband-fade: rgba(34, 86, 88, 0.26);
+  --cool-light: rgba(172, 214, 208, 0.14); /* 左上窗外冷光(青白 ~171°) */
+
+  /* 幕色 alpha:序章 fx 光晕 = 幕色的低透明雾化(与 --act1/--act2 同族) */
+  --act1-fog: rgba(59, 108, 246, 0.16);
+  --act2-fog: rgba(139, 92, 246, 0.07);
+
+  /* 颗粒纹理:环境层(3.5%)与序章老电影层(9%)共用同一份 SVG data-uri */
+  --grain-uri: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  --grain-ambient: 0.035;
+  --grain-fx: 0.09;
 }
 
 * {
@@ -22,19 +44,74 @@ body {
 }
 
 body {
-  /* 极淡冷蓝中心光晕(10% 透明度远低于序章 fx 层):近黑非纯黑、给 3D 场景一点
-     大气底色(grok 复核:录屏压缩后背景显纯黑,简报 §2.3「背景禁止纯黑 #000」,
-     2026-08-05 追加) */
-  background: radial-gradient(
-      ellipse 80% 60% at 50% 35%,
-      rgba(26, 74, 140, 0.1),
-      transparent 70%
+  /* 深夜暗室 · 青雾(设计 agent 2026-08-05 调色师方案):
+     唯一光源 = 底部青色粒子河,雾 = 空气对河的散射(雾恒哑、河恒亮)。
+     四层:雾池(地平线外光池)→ 湿润空气带 → 左上窗外冷光 → 主底青灰。
+     色相三层全青 G≥B(底 ~150-165°、雾 ~175°、冷光 ~171°),无中央光晕
+     (主人:太黑不行、中央蓝光晕「国企科技大屏」味;简报 §2.3 禁止纯黑) */
+  background:
+    radial-gradient(
+      148% 95% at 50% 122%,
+      var(--fog-core) 0%,
+      var(--fog-mid) 42%,
+      var(--fog-rim) 62%,
+      transparent 92%
     ),
-    var(--bg);
+    linear-gradient(
+      180deg,
+      var(--airband) 0%,
+      var(--airband-fade) 50%,
+      transparent 72%
+    ),
+    radial-gradient(
+      90% 65% at 10% 6%,
+      var(--cool-light),
+      transparent 60%
+    ),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 48%, var(--bg-deep) 100%);
   color: var(--text);
   overflow: hidden; /* 滚动完全由 JS 接管（参照零站点） */
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* 极弱噪点层:破数码平涂,screen 微颗粒(与序章 grain 同一纹理,透明度更低) */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--grain-ambient);
+  mix-blend-mode: screen;
+  background-image: var(--grain-uri);
+}
+
+/* 幕间压雾(预留):雾 = 河的散射光,河退场雾就熄 —— 色相保持青(数据语义),
+   只压亮度,不给 act2 紫 / act3 琥珀添乱。data-act 由 hud.js setSeg 写入 .hud,
+   :has() 零 JS 改动。M3 只建第一幕,压雾值待第二/三幕建成按实际场景校准 */
+body:has(.hud[data-act='act2']),
+body:has(.hud[data-act='act3']) {
+  background:
+    radial-gradient(
+      148% 95% at 50% 122%,
+      rgba(56, 120, 116, 0.2) 0%,
+      rgba(34, 84, 86, 0.14) 42%,
+      rgba(22, 58, 60, 0.08) 62%,
+      transparent 82%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(28, 72, 74, 0.1) 0%,
+      rgba(20, 52, 54, 0.05) 32%,
+      transparent 52%
+    ),
+    radial-gradient(
+      90% 65% at 10% 6%,
+      rgba(150, 190, 186, 0.08),
+      transparent 60%
+    ),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 48%, var(--bg-deep) 100%);
 }
 
 #app {
@@ -90,8 +167,8 @@ body {
     radial-gradient(1px 1px at 84% 22%, rgba(125, 211, 252, 0.6), transparent 1.5px),
     radial-gradient(1px 1px at 30% 74%, rgba(255, 255, 255, 0.28), transparent 1.5px),
     radial-gradient(1.5px 1.5px at 55% 12%, rgba(125, 211, 252, 0.45), transparent 2px),
-    radial-gradient(ellipse 62% 52% at 50% 40%, rgba(59, 108, 246, 0.16), transparent 72%),
-    radial-gradient(ellipse 34% 24% at 80% 16%, rgba(139, 92, 246, 0.07), transparent 70%);
+    radial-gradient(ellipse 62% 52% at 50% 40%, var(--act1-fog), transparent 72%),
+    radial-gradient(ellipse 34% 24% at 80% 16%, var(--act2-fog), transparent 70%);
   transition: transform 0.3s cubic-bezier(0.2, 0.6, 0.3, 1); /* 视差平滑跟随 */
 }
 
@@ -105,9 +182,9 @@ body {
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  opacity: 0.09;
+  opacity: var(--grain-fx);
   mix-blend-mode: screen; /* screen 对暗底提亮明显，overlay 在纯黑上几乎无效 */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-image: var(--grain-uri);
   animation: grain-shift 0.4s steps(4) infinite;
 }
 

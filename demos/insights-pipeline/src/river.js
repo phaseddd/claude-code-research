@@ -22,12 +22,15 @@
 import * as THREE from 'three'
 
 // ---------- 河色(简报 §2.3 river 色阶) ----------
+// 2026-08-05 参数微调(简报可调条款,注释理由):body/deep 从冷蓝转冷青 ——
+// 粒子河是整屏记忆色,背景已转青相(G≥B)后河仍 210° 蓝 → 观感「蓝色数据流/国企大屏」;
+// 转 ~188° teal 后与背景雾(175°)同族、meta 支(190° 白青)过渡自然,S3 双色验收不受影响
 const COL = {
-  ember: new THREE.Color('#E8F4FF'), // 源头点亮瞬间 HDR 峰(冷白)
-  core: new THREE.Color('#B8E7FF'), // L0 芯核(偏白青,定义脊线)
-  body: new THREE.Color('#4AA8FF'), // L1 主体(稳定冷蓝)
-  deep: new THREE.Color('#1A4A8C'), // L2 尘雾 / 远场(暗蓝)
-  // meta 支偏白青:与主干冷蓝拉开,避免右支与主河连成一片(grok 复核,2026-08-05)
+  ember: new THREE.Color('#E6FAF7'), // 源头点亮瞬间 HDR 峰(冷白微青)
+  core: new THREE.Color('#B5EEEA'), // L0 芯核(偏白青,定义脊线)
+  body: new THREE.Color('#3FB4CC'), // L1 主体(稳定冷青,原冷蓝 #4AA8FF)
+  deep: new THREE.Color('#1B5560'), // L2 尘雾 / 远场(暗青,原暗蓝 #1A4A8C)
+  // meta 支偏白青:与主干拉开亮度,避免右支与主河连成一片(grok 复核,2026-08-05)
   meta: new THREE.Color('#AEE4FF'), // S3 meta 支(白青,纯计算)
   facet: new THREE.Color('#F472B6'), // S3 facet 支(品红,模型判定)
 }
