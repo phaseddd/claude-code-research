@@ -11,8 +11,8 @@ import gsap from 'gsap'
 import { mountPrologue } from './prologue.js'
 import { createScroll } from './scroll.js'
 import { createTimeline } from './timeline.js'
-import { createRiver } from './river.js'
-import { createS1 } from './scenes/s1.js'
+import { createRiver, RIVER } from './river.js'
+import { createS1, S1_CAM_END, S1_LOOK_END } from './scenes/s1.js'
 import { createS2 } from './scenes/s2.js'
 import { createS3 } from './scenes/s3.js'
 import { createHud } from './hud.js'
@@ -110,7 +110,13 @@ function makeSceneSegment({ id, create, scrollVh }) {
 
 // 黑场三段式 gate：旧场景淡出 → 卸旧 → 预挂新场景 → 淡入
 //（deferPrev 把旧段 teardown 推迟给本段 scrub 显式执行,对齐零站点黑场过渡）
-function makeFadeGate({ id, duration = GATE_DURATION }) {
+// 2026-08-05 画卷扩展(仅 g1 启用,其余 gate 行为不变):
+//   minOpacity   dip 底值(默认 0 = 全黑;g1 用 0.25 = 浅呼吸,画卷换卷不黑屏)
+//   cameraPath / lookPath  门内相机滑轨(cam-end → 下一站相机,沿河连续,
+//   无缝衔接的关键:滚动过站时画面是「镜头沿河滑行」而非硬切)
+const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2
+const _gateLook = new THREE.Vector3() // 滑轨 lookAt 临时量(避免每帧 new)
+function makeFadeGate({ id, duration = GATE_DURATION, minOpacity = 0, cameraPath = null, lookPath = null }) {
   return {
     id,
     scrollVh: GATE_VH,
@@ -119,14 +125,22 @@ function makeFadeGate({ id, duration = GATE_DURATION }) {
     deferPrev: true, // 进入本段时旧段不立即 teardown，由下方 scrub 的 teardownOld() 控制
     enter() {}, // gate 无场景
     scrub(ctx, p) {
-      // 黑场三段式：0~0.35 旧场景淡出 → 0.35 卸旧 → 0.65 预挂新场景 → 0.65~1 淡入
+      // 相机滑轨(画卷展卷的站间段):easeInOutSine 与时间轴自动推进同源,
+      // 终点 = 下一站 enter 的相机位 → 无缝
+      if (camera && cameraPath && lookPath) {
+        const e = easeInOutSine(p)
+        camera.position.lerpVectors(cameraPath[0], cameraPath[1], e)
+        camera.lookAt(_gateLook.copy(lookPath[0]).lerp(lookPath[1], e))
+      }
+      // 三段式(浅 dip 版):0~0.35 旧场景淡出到 minOpacity → 0.35 卸旧
+      // → 0.65 预挂新场景 → 0.65~1 淡入回全亮
       if (p < 0.35) {
-        ctx.fadeScene(1 - p / 0.35)
+        ctx.fadeScene(1 - (p / 0.35) * (1 - minOpacity))
       } else {
         ctx.teardownOld()
         if (p >= 0.65) {
           ctx.preEnterNext()
-          ctx.fadeScene((p - 0.65) / 0.35)
+          ctx.fadeScene(minOpacity + ((p - 0.65) / 0.35) * (1 - minOpacity))
         }
       }
     },
@@ -170,7 +184,16 @@ function makeActSegment({ id, title, subtitle }) {
 
 const segments = [
   makeSceneSegment({ id: 's1', create: createS1, scrollVh: SCENE_VH }),
-  makeFadeGate({ id: 'g1', duration: LIGHT_GATE_DURATION }),
+  // 画卷滑轨门(S1→S2):浅 dip(0.25)不黑屏 + 相机沿河滑行到 S2 开场位
+  // (终点 = s2.enter 的 (0,0.5,13)/lookAt 星云,由 s2.js 确认)——
+  // 滚动过站 = 镜头追着河走,「天衣无缝」的衔接点
+  makeFadeGate({
+    id: 'g1',
+    duration: LIGHT_GATE_DURATION,
+    minOpacity: 0.25,
+    cameraPath: [S1_CAM_END, new THREE.Vector3(0, 0.5, 13)],
+    lookPath: [S1_LOOK_END, RIVER.getMidPoint()],
+  }),
   makeSceneSegment({ id: 's2', create: createS2, scrollVh: SCENE_VH }),
   makeFadeGate({ id: 'g2', duration: LIGHT_GATE_DURATION }),
   makeSceneSegment({ id: 's3', create: createS3, scrollVh: SCENE_VH }),

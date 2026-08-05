@@ -40,10 +40,13 @@ const META_FALL = 0.03 // 元会话星下坠速率(局部坐标单位/秒,缓慢
 
 // ---------- 星云几何 ----------
 // 椭球半径(简报 §4 S2:半径 ~3.2 × 2.2 × 1.8),group 倾斜 14.3°(12~18° 区间,
-// 简报 §4.2「避免正对相机的平面感」)——绕 x 轴倾斜,长轴保持水平,扫盘沿长轴水平扫
-const RX = 3.2
-const RY = 2.2
-const RZ = 1.8
+// 简报 §4.2「避免正对相机的平面感」)——绕 x 轴倾斜,长轴保持水平,扫盘沿长轴水平扫。
+// 2026-08-05 画卷复核 ×1.25(grok:S2 星云读成「河的一个结」而非「会话星云天体」,
+// 体积偏小 2~3 倍)—— 相机 scrub 末距星云 4.57 时星云占屏 ~73% 高(原 58%),
+// 配套补点维持密度(中景 150→190、远景 350→430,简报 §4.2「数量自由」条款)
+const RX = 4.0
+const RY = 2.75
+const RZ = 2.25
 const TILT = 0.25 // ≈14.3°,简报 §4.2:12~18°
 // 扫描带参数(拍2):带中心沿局部 x 从一侧扫到另一侧;带半宽 0.35 世界单位
 // (与扫盘平面纹理的 sigma 匹配:平面宽 3.6 → 纹理 u±0.18 → 世界 ±0.32,同量级)
@@ -59,8 +62,8 @@ const EXTRACT_TARGET = new THREE.Vector3(0, 0.15, 0)
 // count: 亮星 = 合成会话数(数据即物体);中景 30% / 远景 70%(暗星 500,简报「数量自由」)
 const LAYER = {
   bright: { sizeMin: 2.5, sizeMax: 4.0 }, // 亮而大,视觉锚点
-  mid: { count: 150, sizeMin: 1.2, sizeMax: 2.2, brightMin: 0.45, brightMax: 0.75 }, // 25~35%
-  far: { count: 350, sizeMin: 0.6, sizeMax: 1.2, brightMin: 0.08, brightMax: 0.25 }, // 55~70%
+  mid: { count: 190, sizeMin: 1.2, sizeMax: 2.2, brightMin: 0.45, brightMax: 0.75 }, // 25~35%(×1.25 放大补密度)
+  far: { count: 430, sizeMin: 0.6, sizeMax: 1.2, brightMin: 0.08, brightMax: 0.25 }, // 55~70%(同上)
 }
 const Z14 = 14 // 尺寸基线深度(与 river.js 同约定:aSize = px·14/300,shader 300/z 还原)
 
@@ -438,7 +441,10 @@ export function createS2({ scene, camera, uiEl, river = null, onRestart = null }
     scanPlane.material.opacity = uniforms.uScanGlow.value / SCAN_GLOW
     scanPlane.visible = uniforms.uScanGlow.value > 0.001
   }
-  const flow = { info: 0 } // 河宽代理:走 river.setInfoVolume(公式单一来源在 river.js)
+  // 河宽代理:走 river.setInfoVolume(公式单一来源在 river.js)。
+  // 起始 = 当前实际宽(画卷连续性:S1 已注入 54,拍3 从 54 平滑 ramp 到全量 258,
+  // 不从 0 重爬 —— 2026-08-05 站界不收缩配套)
+  const flow = { info: river.getInfoVolume() ?? 0 }
   let tl = null
 
   function runBeats() {
@@ -484,12 +490,15 @@ export function createS2({ scene, camera, uiEl, river = null, onRestart = null }
   let entered = false
   return {
     enter() {
-      // 定位相机(简报 §4.2 相机缓慢不抢戏):enter 定位 → scrub 单调推进
+      // 定位相机(简报 §4.2 相机缓慢不抢戏):enter 定位 → scrub 单调推进;
+      // 相机与 g1 门内滑轨终点精确衔接(画卷无缝,main.js 配置)
       camera.position.set(0, 0.5, 13)
       camera.lookAt(nebulaCenter)
-      // 河退居背景(星云是拍1~2 焦点):宽度收敛到最小值,流速 idle
-      // (拍3 再随抽取量 ramp 到全量最宽 —— 宽度叙事:源头窄 → 星云静 → 汇聚最宽)
-      river.setInfoVolume(0)
+      // 河段窗口:右缘 → 叉口 [0.35,1](开场河从右缘进入 = 承接 S1 出口,画卷不断流)
+      river.setVisibleRange(0.35, 1)
+      // 宽度连续(2026-08-05 画卷重构):不归零 —— S1 已注满命中会话的信息量,
+      // 站界收缩会暴露「河断了」的错觉;拍3 抽河再随抽取量 ramp 到全量最宽
+      // (宽度叙事:源头窄 → S1 注入 → 星云汇聚最宽 → 分流变细)
       river.setFlow('idle')
       runBeats()
       entered = true

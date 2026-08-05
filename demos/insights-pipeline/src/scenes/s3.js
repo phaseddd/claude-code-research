@@ -191,6 +191,8 @@ export function createS3({ scene, camera, uiEl, river = null } = {}) {
   // 拍1 汇聚（进入即设；共享河在黑场期已完成变宽，观众见到时已是最宽）：简报 §4.3
   rv.setInfoVolume(STATS.totalInfo)
   rv.setFlow('s3')
+  // 河段窗口复位全河（画卷站界：S1 [0,0.35] / S2 [0.35,1] / S3 全河）
+  rv.setVisibleRange(0, 1)
 
   // ---------- 节拍（简报 §4.3 三拍；首帧 scrub 触发，避开 gate 预挂黑场期，决策记录 7） ----------
   let beats = null

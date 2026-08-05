@@ -8,11 +8,17 @@
 //                         离开 S3 时 dispose —— 本站只用不建不毁)
 //     onRestart           终端右上角「重新体验」点击回调(main.js 注入,回到序章)
 //
+// 画卷重构(2026-08-05 主人定稿):
+//   构图 = 左仪器柱(终端面板 + 文案同左缘同列宽,与河道右 2/3 呼应);
+//   河 = 从进度条右端出生(锚点 = 进度条右端,fill 100% 触达 = 河出生的因果顶点),
+//   蜿蜒(谷→峰)→ 右缘出口;滚动 = 展卷(cam-start 全带 → cam-end 出口)。
+//   数值经 .vision/verify-geom.mjs 投影验证(28/28,1707×850 与 1920×1080)。
+//
 // 生命周期对齐 timeline.js 段契约(§6.2):
 //   enter()   定位共享相机 → 挂 DOM → 锚点逆投影 → 自动播放 4 拍入场节拍(简报 §4「入场节拍自动播放」)
-//   scrub(p)  站内滚动进度 0~1:0.20~0.75 文案浮现(简报 §4 站内滚动编排)
+//   scrub(p)  站内滚动进度 0~1:相机沿河带游移 + 0.20~0.75 文案浮现(简报 §4 站内滚动编排)
 //   update(t, dt) 每帧 river.update(渲染由 main.js 的 onScrollFrame 统一执行)
-//   dispose() 释放本站资源(gsap 时间线 / DOM / 本站监听;river 与 renderer 归 main 管)
+//   dispose() 释放本站资源 + 河段交接(S2 视野承接 [0.35,1])
 // ============================================================
 
 import * as THREE from 'three'
@@ -22,8 +28,17 @@ import { COLORS } from '../theme.js'
 
 // ---------- 参数(简报 §4 S1 基线;偏离处见注释,§0.6「改了要能说出为什么」) ----------
 const TARGET_Z = 12 // 源头深度:锚点射线沿视线走到 z=12(简报 §3.5)
-const CAM_POS = new THREE.Vector3(0, 0.7, 18.5) // S1 相机几乎不动(简报 §3.5 简化策略)
-const CAM_LOOK = new THREE.Vector3(0, -0.8, 10)
+// 相机游移(画卷展卷):cam-start 看全带(出生点 31%W + 出口 92%W 同框,S 弯可见);
+// cam-end 看出口(河抵右缘,面板出屏 —— S1 站末画面 = 河抵达最右)。
+// S1_CAM_END/S1_LOOK_END 导出给 main.js 的 g1 门内滑轨(与 S2 开场相机无缝衔接)
+const CAM_START = new THREE.Vector3(5.2, 0.5, 14.2)
+const CAM_LOOK_START = new THREE.Vector3(1.7, -0.46, 11.5)
+export const S1_CAM_END = new THREE.Vector3(2.2, -0.1, 11.5)
+export const S1_LOOK_END = new THREE.Vector3(0.85, -1.59, 8.0)
+// 河段可见窗口(画卷站界,与 river.js uSegRange 配套):
+//   S1 出生→右缘 [0,0.35](淡出带 [0.32,0.35])/ S2 [0.35,1](淡入同带)→ 重叠带无缝衔接
+const RANGE_S1 = [0, 0.35]
+const RANGE_HANDOFF = [0.35, 1]
 const TYPED_CMD = '/insights'
 // 逐字非匀速:标点略慢、字母略快(简报 §4「28~42ms/字符」;确定性,不随机)
 const CHAR_MS = { '/': 40, i: 28, n: 32, s: 32, g: 32, h: 32, t: 32 }
@@ -63,11 +78,13 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
   let tl = null
   let root = null
   let termEl = null
+  let barEl = null // 进度条(锚点 = 其右端,河的出生点)
   let copyBig = null
   let copySmall = null
   let copyNotes = null
   let built = false
   let disposed = false
+  const _look = new THREE.Vector3() // scrub 相机 lookAt 临时量(避免每帧 new)
 
   // ---------- DOM:终端面板(挂 #ui 层)+ 站内文案(文案逐字锚定简报 §4,不得改写) ----------
   function buildDom() {
@@ -93,7 +110,10 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
           </div>
           <div class="s1-analyzing">analyzing your sessions…</div>
           <div class="s1-progress">
-            <div class="s1-progress-bar"><div class="s1-progress-fill"></div></div>
+            <div class="s1-progress-bar">
+              <div class="s1-progress-fill"></div>
+              <span class="s1-bar-mouth"></span>
+            </div>
             <span class="s1-progress-pct">62%</span>
           </div>
         </div>
@@ -107,6 +127,7 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
     `
     uiEl.appendChild(root)
     termEl = root.querySelector('.s1-terminal')
+    barEl = root.querySelector('.s1-progress-bar')
     copyBig = root.querySelector('.s1-copy-big')
     copySmall = root.querySelector('.s1-copy-small')
     copyNotes = root.querySelector('.s1-copy-notes')
@@ -115,25 +136,36 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
     root.querySelector('.s1-restart').addEventListener('click', () => onRestart?.())
   }
 
-  // ---------- DOM-3D 锚点(简报 §3.5):面板底部中心 → 屏幕坐标 → 逆投影 → 沿视线走到 z=12 ----------
+  // ---------- DOM-3D 锚点(简报 §3.5):进度条右端 → 逆投影 → 沿视线走到 z=12 ----------
+  // 画卷因果:进度条 fill 走满 100% 的瞬间触达进度条右端 = 河的出生点(同一位置)。
+  // 粒子从面板右下角区域涌出向右(河道方向),出口干净 —— 锚点内移只换因果锚,
+  // 不重演 grok 否决过的「中心锚点斜穿面板右缘中部」(2026-08-05 决策记录)。
+  // 2026-08-05 修复(主人实测「入口漂移」):原 anchor 用实时 camera 逆投影,而
+  // enter() 时 camera.matrixWorld 要等首次 render 才刷新 —— 刷新态靠 fonts.ready
+  // 二次锚点碰巧修正;滚回重入时 fonts 已加载 → 微任务先于下一帧 render → 锚点
+  // 永远用陈旧矩阵 → 入口在「刷新位置」与「滚回位置」间漂移。修复:一律经
+  // CAM_START 克隆相机逆投影(与实时相机/滚动位置无关,确定性;clone 后必须
+  // updateMatrixWorld,否则 unproject 仍吃副本的陈旧矩阵)
   function anchor() {
-    if (!termEl || !camera || !river) return
-    const rect = termEl.getBoundingClientRect()
-    // 源头锚点:面板底右缘(×1.0 = 右下角)。grok 2026-08-05 两轮:中心锚点粒子
-    // 斜穿面板右缘中部露出(口不干净);×0.78 仍从右缘中部露。×1.0 源头钉在
-    // 面板右下角,粒子从角上直接涌出向右上,面板完全不在粒子路径上(遮挡 0)
-    const sx = rect.left + rect.width
-    const sy = rect.bottom
+    if (!barEl || !camera || !river) return
+    const rect = barEl.getBoundingClientRect()
+    const sx = rect.left + rect.width // 进度条右端(100% 时刻 fill 到达处)
+    const sy = rect.top + rect.height / 2
+    const tmp = camera.clone()
+    tmp.position.copy(CAM_START)
+    tmp.lookAt(CAM_LOOK_START)
+    tmp.updateMatrixWorld()
+    tmp.updateProjectionMatrix()
     const ndc = new THREE.Vector3(
       (sx / window.innerWidth) * 2 - 1,
       -(sy / window.innerHeight) * 2 + 1,
       0.5
     )
-    ndc.unproject(camera)
-    const dir = ndc.sub(camera.position).normalize()
+    ndc.unproject(tmp)
+    const dir = ndc.sub(tmp.position).normalize()
     if (Math.abs(dir.z) < 1e-6) return
-    const t = (TARGET_Z - camera.position.z) / dir.z
-    river.setSource(camera.position.clone().addScaledVector(dir, t))
+    const t = (TARGET_Z - tmp.position.z) / dir.z
+    river.setSource(tmp.position.clone().addScaledVector(dir, t))
   }
 
   // ---------- 4 拍入场节拍(简报 §4;每拍 0.4~0.8s,错峰不齐步;第 1 拍 ≤0.4s) ----------
@@ -291,13 +323,16 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
     enter() {
       if (built || disposed) return
       built = true
-      // 相机定位:S1 相机几乎不动(简报 §3.5 简化策略;站内滚动只驱动粒子与文案)
-      camera.position.copy(CAM_POS)
-      camera.lookAt(CAM_LOOK)
+      // 相机定位:cam-start(画卷全带视角;展卷游移由 scrub 驱动)
+      camera.position.copy(CAM_START)
+      camera.lookAt(CAM_LOOK_START)
+      // 河段窗口:S1 带(出生→右缘);「重新体验」重入时重置(旧值可能是 S3 的全河)
+      river?.setVisibleRange(...RANGE_S1)
 
       buildDom()
       anchor()
-      // 字体加载会改变面板高度 → 重算锚点(等宽字就绪后终端底部位置才稳定)
+      // 字体加载会改变面板高度 → 重算锚点(等宽字就绪后进度条位置才稳定;
+      // 确定性相机克隆使字体重锚与实时相机无关)
       document.fonts?.ready.then(() => {
         if (!disposed) anchor()
       })
@@ -306,13 +341,24 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
       tl = buildBeats()
     },
 
-    // 站内滚动:0.20~0.75 文案浮现(大字 → 小字 → 注记;简报 §4 站内滚动编排)
+    // 站内滚动:相机沿河带游移(展卷)+ 0.20~0.75 文案浮现(大字 → 小字 → 注记)
     scrub(p) {
+      // 画卷展卷:cam-start 全带 → cam-end 出口(easeInOutQuad 同 S2/S3 相机语言;
+      // 河源头随相机游移滚出屏,站末画面 = 河抵右缘)
+      const k = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2
+      camera.position.lerpVectors(CAM_START, S1_CAM_END, k)
+      camera.lookAt(_look.copy(CAM_LOOK_START).lerp(S1_LOOK_END, k))
+      // 面板柱随卷出屏(2026-08-05 实测修复):DOM 面板不随相机移动,相机右移后
+      // 面板若留在屏内会与已滚出屏的河源头脱节成「贴纸」。0.75 后文案已浮现完,
+      // 柱整体左移 + 渐隐出屏(55vw = 面板+文案完全滚出),与源头出屏同节奏
+      const pan = Math.max(0, (p - 0.75) / 0.25)
+      root.style.transform = `translateX(${-pan * 55}vw)`
+      root.style.opacity = String(1 - pan * 0.9)
       const show = (el, a, b) => {
         if (!el) return
-        const k = Math.min(1, Math.max(0, (p - a) / (b - a)))
-        el.style.opacity = String(k)
-        el.style.transform = `translateY(${(1 - k) * 22}px)`
+        const kk = Math.min(1, Math.max(0, (p - a) / (b - a)))
+        el.style.opacity = String(kk)
+        el.style.transform = `translateY(${(1 - kk) * 22}px)`
       }
       show(copyBig, 0.2, 0.42)
       show(copySmall, 0.36, 0.6)
@@ -330,6 +376,9 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
       built = false
       tl?.kill()
       window.removeEventListener('resize', onResize)
+      // 河段交接:本站 teardown 发生在 g1 黑场 dip 期,把河段窗口切给 S2 视野
+      // (S2 enter 会再次确认,幂等)—— 河始终连续,画卷不中断
+      river?.setVisibleRange(...RANGE_HANDOFF)
       root?.remove()
     },
   }

@@ -1094,21 +1094,23 @@ body:has(.hud[data-act='act3']) {
   inset: 0;
   display: flex;
   flex-direction: column;
-  /* 构图(2026-08-05 主人实测修复):面板居中时,河源头在面板底、河向上流,
-     投影整条落在面板正背后 —— 面板半透明透出粒子 = 「粒子和面板叠在一起」,
-     盖/遮/压都是打补丁。终端移到左侧(命令入口),河主体在屏幕中央偏右
-     (路径 P1~P4 投影 ≈786~907px,不随面板动),源头锚点自动跟随面板底,
-     河从面板底边冒出斜向右上,全程不被遮挡 */
+  /* 构图(2026-08-05 画卷重构):左仪器柱 = 终端面板 + 文案同左缘同列宽,
+     右 2/3 归河(出生点 31%W → 蜿蜒 → 右缘 92%W 出口)——
+     根治「中间对称、卡片歪一边」的两张皮;柱内自上而下 = 阅读次序
+     (打字 → 命中 → 进度 → 注释),滚动时序(scrub 0.2~0.75)双重保证 */
   align-items: flex-start;
+  /* 共享列宽:面板与文案同一根柱(review 2026-08-05:27.5vw 让两视口
+     出生点 x 稳定 ~32~33.5%W,固定 520px 在 1707 宽下会推到 36.5% 越界) */
+  --s1-col: min(520px, 27.5vw, calc(100vw - 48px));
 }
 
 /* 终端面板：半透明 + 冷色细边 + 圆角小（简报 §4 终端细节）；
-   面板放屏幕中下部（top ≈55vh 居中），文案区在其下方 */
+   面板放屏幕中下部（top 33vh）,文案区在其下方,同一根左柱 */
 .s1-terminal {
   position: relative;
-  margin-top: 55vh;
+  margin-top: 33vh;
   margin-left: 6vw; /* 面板居左(命令入口),河主体在中央偏右 —— 构图错开 */
-  width: min(520px, calc(100vw - 48px));
+  width: var(--s1-col);
   /* 背景 0.72 → 0.85:面板与河错开后,面板内只剩源头小段粒子,
      0.85 遮住面板内透出,保留玻璃质感(2026-08-05 构图修复配套) */
   background: rgba(8, 12, 20, 0.85);
@@ -1298,6 +1300,22 @@ body:has(.hud[data-act='act3']) {
   opacity: 0;
 }
 
+/* 河口标记(2026-08-05 grok 复核:出生点因果要「钉死」—— 进度条右端 = 河的嘴,
+   常驻微光点,粒子从点处涌出;fill 100% 走满触达此点 = 河出生的因果顶点) */
+.s1-bar-mouth {
+  position: absolute;
+  right: 1px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: #7cf0ff;
+  box-shadow: 0 0 8px rgba(125, 211, 252, 0.9), 0 0 18px rgba(125, 211, 252, 0.5);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
 /* 命中/注入完成的斩截闪(影评人 2026-08-05:「命中要有身体感,别只加两行字」;
    MATCH 浮现与进度条走满两处复用;动画一次性,100% 帧回初始 shadow) */
 .s1-hit-flash {
@@ -1338,14 +1356,15 @@ body:has(.hud[data-act='act3']) {
   }
 }
 
-/* 站内文案区（面板下方；0.20~0.75 随滚动浮现，scrub 驱动；文案逐字锚定简报 §4） */
+/* 站内文案区（面板下方；0.20~0.75 随滚动浮现，scrub 驱动；文案逐字锚定简报 §4）
+   画卷重构:从居中改为与面板同左缘同列宽的左对齐柱(仪器柱叙事,根治两张皮);
+   文案整体稳居河道带之下(出生 57%H 起步、柱右缘 33.5%W vs 河道 x>34%W,不重叠) */
 .s1-copy {
   position: relative; /* ::before 衬底定位锚(与 .s2-copy 同款) */
   margin-top: 6vh;
-  margin-left: auto; /* 面板居左后,文案区仍居中(阅读习惯;衬底遮粒子) */
-  margin-right: auto;
-  width: min(640px, calc(100vw - 48px));
-  text-align: center;
+  margin-left: 6vw;
+  width: var(--s1-col);
+  text-align: left;
 }
 
 /* 字永远净(简报 §1.4-6):河源头粒子团在面板下方,与文案区交叠 ——
@@ -1363,17 +1382,41 @@ body:has(.hud[data-act='act3']) {
   );
 }
 
-/* 矮视口(≤950px 高):面板/文案区用固定值整体上移,避开底部 HUD 轨道
-   (2026-08-05 主人实测:850px 视口下注记文案与 HUD 重叠 34px、终端面板
-   内容被视口裁切 —— 布局溢出同一根因)。vh 值在矮视口下仍溢出
-   (42vh 面板底 619 + 文案 178 = 797 侵入 HUD 780),固定 110px 起:
-   面板 110~372 + 文案 390~568,768px 视口(HUD ≈698)仍余 130px */
+/* 矮视口(≤950px 高):面板/文案区用固定 px 整体上移,避开底部 HUD 轨道
+   (2026-08-05 主人实测:850px 视口下注记文案与 HUD 重叠 —— 布局溢出同一根因)。
+   两档兜底:min(33vh, px) 在高屏回落 vh、在矮屏钉死 px(review 2026-08-05:
+   纯 px 在断点两侧跳变 ~9pp,min() 让两档间连续过渡)。
+   实测校准(2026-08-05):文案三段全显后高 ≈242px(大字窄列折两行 + 注记两行),
+   850 档面板 215 起 → 出生点 52.4%H、文案底距 HUD ~35px;
+   768 档面板 150 起 → 出生点 49.5%H、文案底距 HUD ~22px */
 @media (max-height: 950px) {
   .s1-terminal {
-    margin-top: 110px;
+    margin-top: min(33vh, 215px);
   }
   .s1-copy {
-    margin-top: 18px;
+    margin-top: 24px;
+  }
+}
+
+@media (max-height: 800px) {
+  .s1-terminal {
+    margin-top: min(33vh, 150px);
+  }
+  .s1-copy {
+    margin-top: 20px;
+  }
+}
+
+/* 窄屏兜底(<1044px 宽):面板 27.5vw 窄于最长命中行内容,行名收 ellipsis 防折行
+   (review 2026-08-05,顺手补防;目标视口无碍) */
+@media (max-width: 1040px) {
+  .s1-row {
+    flex-wrap: nowrap;
+  }
+  .s1-row-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

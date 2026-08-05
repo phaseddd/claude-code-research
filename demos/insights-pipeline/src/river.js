@@ -37,18 +37,26 @@ const COL = {
 
 // ---------- 路径几何(全局常量,场景模块 import 用于对齐;源头动态) ----------
 // 坐标基线(世界单位,Z 负方向深入屏幕):叉口 = 主干末点 = 两支起点,保证连续。
-//   S1 源头(锚点):屏幕终端底部中心逆投影,深度 z≈12
-//   S2 星云中景:主干 t≈0.5 附近
+//   S1 源头(锚点):进度条右端逆投影,深度 z≈12
+//   S2 星云中景:主干 t=0.5(控制点 P4a 精确落位)
 //   S3 叉口:(0, 0.5, -13),meta 盒 (4.8, 0.2, -28) / facet 盒 (-4.6, 0.1, -28)
+// 2026-08-05 画卷重构(主人定稿 + .vision/verify-geom.mjs 投影验证 28/28):
+// 9 控制点(t_i = i/8),S1 带 4 点 = 出生 → 谷(下压)→ 峰(上抬)→ 右缘顶点(出口);
+// 星云 = P4a@t=0.5(S2 getMidPoint 精确落位,星云锚点不再由曲线形状间接决定);
+// P7 叉口与分支几何钉死(S3 相机/缓存盒全部按此校准,不得移动)。
 // 2026-08-05 grok 复核修正:分支原 ±2.5×10 单位,在 ~23 单位观察距离下投影只占
 // 屏幕 ±6.5% —— 「双色分叉一眼可读」不成立(任何相机位都救不回绝对尺寸)。
 // 分支加长到 ~15 单位、盒外移 ±4.6~4.8(展开角 ≈35°,仍在简报 §4.3 的 28~36° 区间)
 const MAIN_CTRL = [
-  [0, -1.1, 12], // P0 源头(占位,setSource 时替换为锚点世界坐标)
-  [0.6, -0.7, 7],
-  [0.4, -0.3, 0],
-  [-0.3, 0.1, -7],
-  [0, 0.5, -13], // 叉口
+  [0, -1.1, 12], // P0 源头(占位,setSource 时替换为进度条右端锚点)
+  [0.6, -1.6, 9.6], // P1 谷:S1 带第一个弯(下压,蜿蜒起点)
+  [1.9, -0.8, 8.6], // P2 峰:S1 带第二个弯(上抬)
+  [3.5, -0.7, 7.3], // P3 顶点:t=0.375,S1 出口(右缘,微上扬收官)
+  [-0.5, -0.3, -1.0], // P4a 星云:t=0.5(= getMidPoint,S2 星云锚点)
+  [0.2, -0.1, -4.5], // P4b 星云→左后过渡(平滑拐向叉口方向)
+  [-0.3, 0.1, -7], // P5 接近叉口的左偏(保持 S3 进近形态)
+  [0, 0.35, -11], // P6 叉口前微抬
+  [0, 0.5, -13], // P7 叉口(= 主干末点,分支起点;S3 几何钉死)
 ]
 const META_CTRL = [
   [0, 0.5, -13], // 与主干末点一致(连续)
@@ -94,8 +102,10 @@ export const RIVER = {
 // 亮度 1.0/0.5/0.13 拉开层次(原 0.55/0.18 被 additive 叠白吞掉)
 const LAYERS = [
   { count: 1000, sizeMin: 2.8, sizeMax: 4.2, bright: 1.0, alpha: 1.0, across: 0.55 }, // L0 芯:定义脊线(窄)
-  { count: 6000, sizeMin: 1.4, sizeMax: 2.4, bright: 0.5, alpha: 0.9, across: 1.0 }, // L1 身:河宽、信息量编码
-  { count: 2700, sizeMin: 0.8, sizeMax: 1.6, bright: 0.13, alpha: 0.7, across: 1.25 }, // L2 尘:体积感(散、暗)
+  // 2026-08-05 画卷复核微调(grok:图1 河偏淡压不住右缘留白):L1 0.5→0.55、L2 0.13→0.17,
+  // 只提亮度不动分布 —— 「亮核丝带 + 外层粒子晕」双层结构保留
+  { count: 6000, sizeMin: 1.4, sizeMax: 2.4, bright: 0.55, alpha: 0.9, across: 1.0 }, // L1 身:河宽、信息量编码
+  { count: 2700, sizeMin: 0.8, sizeMax: 1.6, bright: 0.17, alpha: 0.7, across: 1.25 }, // L2 尘:体积感(散、暗)
   { count: 300, sizeMin: 3.0, sizeMax: 6.0, bright: 0.35, alpha: 0.2, across: 0.6 }, // L3 火花:事件脉冲用,平时极淡
 ]
 const TOTAL = LAYERS.reduce((a, l) => a + l.count, 0) // 10000
@@ -154,6 +164,7 @@ const VERT = /* glsl */ `
   uniform float uAbsorbOn;     // 0/1 吸收开关(S3 入盒节拍后开)
   uniform float uPixelRatio;   // DPR(已钳制 2)
   uniform float uPointerBias;  // 鼠标隐藏分:整河横向微偏 ±2%(简报 §3.3.6)
+  uniform vec2  uSegRange;     // 分段可见窗口(x 起 / y 终,默认 (-1,2) 全河;画卷站界)
 
   varying float vAlpha;
   varying vec3  vColor;
@@ -211,6 +222,14 @@ const VERT = /* glsl */ `
     // 宽度过渡带(t≈injProg)粒子亮度 +30% —— 波浪「推过去」的能量可见
     float waveGlow = smoothstep(-W_INJ_BAND, 0.0, t - injProg) * (1.0 - smoothstep(0.0, W_INJ_BAND * 1.5, t - injProg));
 
+    // 分段可见(画卷 2026-08-05):每站只显示河的一段 —— S1 出生到右缘 [0,0.35]、
+    // S2 右缘到叉口 [0.35,1]、S3 全河;站间重叠带(±0.03)淡入淡出 → 站界无缝衔接
+    // (S1 尾与 S2 头共享 t∈[0.32,0.35],滚动过站时河不断流)。默认 (-1,2) → seg 恒 1,
+    // 与无分段行为等价(简报可微调条款:全河渲染基线不变)
+    const float SEG_BAND = 0.03;
+    float seg = smoothstep(uSegRange.x - SEG_BAND, uSegRange.x, t) *
+      (1.0 - smoothstep(uSegRange.y, uSegRange.y + SEG_BAND, t));
+
     // 高斯截面偏移 + 呼吸扰动(双正弦叠加,幅度 0.04~0.08 × 河宽,频率 0.6~1.2)
     vec3 t0 = sampleCurve(uPathMain, clamp(t - 0.01, 0.0, 1.0));
     vec3 t1 = sampleCurve(uPathMain, clamp(t + 0.01, 0.0, 1.0));
@@ -235,7 +254,7 @@ const VERT = /* glsl */ `
       grow = 0.45 + 0.55 * easeOutCubic(min(1.0, t / 0.12));
       shrink = 1.0 - 0.4 * smoothstep(0.85, 1.0, t);
     }
-    vAlpha = aAlpha * life * edge;
+    vAlpha = aAlpha * life * edge * seg;
     float sizeScale = grow * shrink * edge;
     // 分支段尺寸 ×1.35(分支在远处,透视衰减后粒子过小不可读);
     // facet 支再 ×1.4(粉点浓度低,2026-08-05 grok 复核两轮后定档)
@@ -421,6 +440,7 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
     uAbsorbOn: { value: 0 },
     uPixelRatio: { value: 1 },
     uPointerBias: { value: 0 },
+    uSegRange: { value: new THREE.Vector2(-1, 2) }, // 初始全河(无分段,行为与旧版一致)
     uMap: { value: makeSoftTexture() },
   }
 
@@ -487,6 +507,12 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
     // 分叉 morph(简报 §4.3:0.45~0.65s easeInOutCubic,由场景侧驱动)
     setBranchMix(mix) {
       uniforms.uBranchOn.value = mix
+    },
+
+    // 分段可见窗口(画卷站界):S1 [0,0.35] / S2 [0.35,1] / S3 全河 [-1,2] 或 [0,1];
+    // 站间重叠带淡入淡出由 shader 完成,场景侧只需在 enter/teardown 时切换
+    setVisibleRange(start, end) {
+      uniforms.uSegRange.value.set(start, end)
     },
 
     // 缓存盒吸收(简报 §4.3 入盒:粒子接近盒 alpha 渐隐,防穿模;
