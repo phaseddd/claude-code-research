@@ -43,6 +43,7 @@
 
 const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v))
+const REVERSE_LOCK_FRAMES = 30 // 反向意图锁存帧数（≈0.5s @60fps）：检测到反滚后保持释放钳制
 
 /**
  * 创建时间轴实例。
@@ -69,6 +70,10 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null,
   let t = 0 // 时间轴累计时间（update 的 t，全时间轴唯一时钟）
   let sceneOpacity = 1 // #scene 透明度影子值（所有 fadeScene 写入经 setSceneOpacity 记录）
   let fadeTween = null // 转场接续补间：{from, to, t0, dur}，gate 被打断时 从当前值 → 1
+  let lastTarget = -1 // autoScroll 段的上一帧 target（帧间差分检测反滚意图；-1 首帧不误判）
+  let reverseLock = 0 // 反向意图锁存帧数：差分检测到下降后保持释放钳制 N 帧
+  //（低滚速用户 bump 之间 target 静止的帧会被钳制拉回——锁存让"持续反滚"保持释放；
+  // 停手 N 帧后自动恢复钳制，gate 继续推进。N=30 ≈ 0.5s @60fps）
 
   const activeIndex = () => (active ? segs.indexOf(active) : -1)
 
@@ -177,8 +182,31 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null,
       fadeTween = null
       elapsed += dt
       const p = clamp(elapsed / (active.duration ?? 3.5), 0, 1)
-      scroll.setTarget(Math.max(target, active.start + easeInOutSine(p) * active.scrollVh))
-      active.scrub?.(ctx, p)
+      const forward = active.start + easeInOutSine(p) * active.scrollVh
+      // 反向意图检测（帧间差分 + 锁存）：target 比上一帧下降 = 用户正在反滚 →
+      // 释放下限钳制（不 setTarget），target 自由穿出 gate 回到前一段。修复
+      // 2026-08-05（PLAN §4）：原实现每帧 setTarget(max(target, forward)) 是单方向
+      // 棘轮——反滚每帧被擦除，locate 永不落回前一段、gate 反复重启（elapsed 重置），
+      // PLAN"滚过头需滚回上一段再进"的逃生口被同一条钳制封死（Workflow 3 agent
+      // 交叉复核 + 帧日志实测：普通滚轮 8~60vh/s 远低于逃逸阈值 ~135vh/s 永久困死；
+      // 且 gate 走满后 target 钉死 gate.end，反滚 [entry, end] 区间全被弹回）。
+      // 锁存必要性：仅差分（下降帧释放）时，低滚速用户 bump 之间 target 静止的帧
+      // 走钳制分支，forward 涨过静止 target 后拉回 → 仍穿不出（实测 slow-rev35 困死）；
+      // 锁存让"持续反滚"（每格刷新）全程释放，停手 0.5s 后自动恢复钳制。
+      // 判据演进：曾用 target < forward（推进反超）——正向停住也成立 → 误伤正向
+      // 路径（gate 停摆不自动走完，实测 fwd8-wait）；差分+锁存只在"用户主动反滚"
+      // 时成立，正向停手 → 无下降 → 无锁存 → 钳制 → gate 正常走完（电影式转场语义
+      // 保留，无黑洞）。黑场编舞照常时间驱动：旧幕淡出→黑场；穿出 gate 由 switchTo
+      // 的 leavingAuto 接续补间把新幕从黑场淡入（无白屏）。
+      if (target < lastTarget) reverseLock = REVERSE_LOCK_FRAMES
+      else if (reverseLock > 0) reverseLock--
+      if (reverseLock > 0) {
+        active.scrub?.(ctx, p)
+      } else {
+        scroll.setTarget(Math.max(target, forward))
+        active.scrub?.(ctx, p)
+      }
+      lastTarget = target
     }
 
     // 转场接续补间推进（gate 被打断后 从当前透明度 → 1，线性同速）

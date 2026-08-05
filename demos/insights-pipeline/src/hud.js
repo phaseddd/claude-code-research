@@ -29,6 +29,14 @@ const STOPS = [
   { seg: 'act2', nodes: [4, 5], short: '第二幕 · 理解', next: '第三幕 · 生成' },
   { seg: 'act3', nodes: [6, 7, 8], short: '第三幕 · 生成', next: null },
 ]
+// gate → 夹住它的两幕（正向入口 / 出口）：gate 标题按穿越方向显示
+// （正向"第二幕 → 第三幕"，反向"第三幕 → 第二幕"）——
+// 原实现恒用 prev.next 拼接，反向穿越时显示错误方向（act2 侧反穿显示
+// "第二幕 → 第三幕"）甚至 "→ null"（act3 侧反穿 prev.next=null，2026-08-05 实测）
+const GATE_DIR = {
+  gate1to2: ['act1', 'act2'],
+  gate2to3: ['act2', 'act3'],
+}
 const STATION_NAMES = [
   '命令命中',
   '扫盘',
@@ -160,14 +168,20 @@ export function createHud({ uiEl, onSelect = null } = {}) {
       } else if (prevId) {
         // gate 过渡段：标题显示 旧幕 → 新幕（青色 → 是排版符号非 emoji，
         // 见 PLAN §2.4 措辞规范第 6 条），轨道扫光表示流水线在运转。
+        // 方向感知：prevId 是 gate 前的 active——等于 GATE_DIR 首元素 = 正向
+        // （从出口前的一幕进入），等于次元素 = 反向（从出口后的一幕退回）。
         // 注意用 innerHTML：hud-arrow 是 <i> 装饰元素，textContent 会把标签
         // 原文打到屏幕上（grok 实测抓到的泄漏 bug 2026-08-05）；
         // 内容全部来自上方 STOPS 常量（代码内定义），无注入面
-        const prev = STOPS.find((s) => s.seg === prevId)
-        root.classList.add('is-gating')
-        titleEl.innerHTML = prev
-          ? `${prev.short} <i class="hud-arrow">→</i> ${prev.next}`
-          : ''
+        const pair = GATE_DIR[segId]
+        const a = STOPS.find((s) => s.seg === pair?.[0])
+        const b = STOPS.find((s) => s.seg === pair?.[1])
+        if (a && b) {
+          const from = prevId === pair[0] ? a : b
+          const to = prevId === pair[0] ? b : a
+          root.classList.add('is-gating')
+          titleEl.innerHTML = `${from.short} <i class="hud-arrow">→</i> ${to.short}`
+        }
       }
     },
     // 销毁：撤节点点击监听、杀数字滚动补间、移除 DOM
