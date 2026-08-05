@@ -92,9 +92,11 @@ export function createHud({ uiEl, onSelect = null } = {}) {
   // 时长 1.2s：0.55s/0.9s 太快，30fps 按秒抽帧抓不到中间值（grok 复验仍报
   // "端点跳变"）；1.2s 后中间帧窗口 ~0.5s，肉眼与抽帧都能读到滚动过程
   const rollTo = (n) => {
+    // 先杀在飞补间再读当前值：补间途中显示值恰为新目标时提前 return 会让旧补间
+    // 滚完停错值（2026-08-05 F1，快速跨幕连点时数字与幕错位）
+    numTween?.kill()
     const cur = parseInt(numEl.textContent, 10) || 1
     if (cur === n) return
-    numTween?.kill()
     const obj = { v: cur }
     numTween = gsap.to(obj, {
       v: n,

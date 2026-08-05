@@ -96,8 +96,10 @@ export function createScroll({ max = 0, onFrame = null, wheelFactor = WHEEL_FACT
 
   // 键盘：方向键小步、PageDown/PageUp/Space 大步（页面无原生滚动，键盘也归 JS 管）
   const onKeyDown = (e) => {
-    // 焦点在按钮/输入控件时不劫持（如按住按钮聚焦时按 Space 是"按住"不是"滚动"）
-    if (e.target.closest?.('button, [role="button"], input, textarea, select, a')) return
+    // 仅 Space/Enter 在按钮/输入控件上时让给控件语义（激活/按住）——方向键与翻页
+    // 是滚动语义，不因焦点位置吞掉（2026-08-05 F3：点击 HUD 节点后焦点停在按钮上，
+    // 原守卫把方向键全吞 → 键盘滚动永久失效）
+    if ((e.key === ' ' || e.key === 'Enter') && e.target.closest?.('button, [role="button"], input, textarea, select, a')) return
     let dv = 0
     switch (e.key) {
       case 'ArrowDown':

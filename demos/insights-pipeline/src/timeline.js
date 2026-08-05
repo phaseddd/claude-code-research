@@ -90,6 +90,11 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null,
   // 显式执行）；skipTo 无条件 teardown（直接跳转，不等转场）
   function switchTo(next, { force = false } = {}) {
     if (!next || next === active) return
+    // 重置反向意图锁存：lastTarget/reverseLock 只在 autoScroll 分支更新，
+    // 反滚逃生后残留会让下次 gate 重入误武装 30 帧钳制释放 → 0.5s 停滞+前冲
+    // （2026-08-05 F2）
+    lastTarget = -1
+    reverseLock = 0
     const prev = active
     // 0. 转场接续：切走未走完的 autoScroll 段（wheel 硬切 / 反向穿越）时，
     //    透明度从当前值线性补间到 1 —— 黑场中途不停车、不跳变。
