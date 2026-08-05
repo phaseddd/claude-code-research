@@ -22,7 +22,15 @@ body {
 }
 
 body {
-  background: var(--bg);
+  /* 极淡冷蓝中心光晕(10% 透明度远低于序章 fx 层):近黑非纯黑、给 3D 场景一点
+     大气底色(grok 复核:录屏压缩后背景显纯黑,简报 §2.3「背景禁止纯黑 #000」,
+     2026-08-05 追加) */
+  background: radial-gradient(
+      ellipse 80% 60% at 50% 35%,
+      rgba(26, 74, 140, 0.1),
+      transparent 70%
+    ),
+    var(--bg);
   color: var(--text);
   overflow: hidden; /* 滚动完全由 JS 接管（参照零站点） */
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -854,5 +862,423 @@ body {
   .hud-bar {
     gap: 1vw;
     padding: 1.4vh 3vw 2vh;
+  }
+}
+
+/* ---------- 第一幕场景 · S2 扫盘（会话星云文案覆盖层） ----------
+   站内滚动编排（简报 §4 共用结构）：0.2~0.75 文案浮现（大字 → 小字 → 合成标注），
+   透明度/位移由 s2.js 的 scrub 逐段驱动（滚动 = 看，不在这里做 CSS 动画）。
+   文案逐字锚定 PLAN §2.2 S2，不得改写删减。 */
+
+.s2-copy {
+  position: absolute;
+  top: 9vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, 88vw);
+  text-align: center;
+  pointer-events: none;
+  z-index: 12; /* 3D 场景之上、HUD（30）之下 */
+}
+
+/* 字永远净（简报 §1.4-6）：星云推近后扫过文案区，柔暗衬底保文字锐利 */
+.s2-copy::before {
+  content: '';
+  position: absolute;
+  inset: -18px -36px;
+  z-index: -1;
+  background: radial-gradient(ellipse 62% 56% at 50% 45%, rgba(5, 7, 13, 0.55), transparent 72%);
+}
+
+/* 大字核心句：思源宋体 Heavy 900（站标题字阶，简报 §2.4） */
+.s2-big {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-weight: 900;
+  font-size: clamp(1.35rem, 3.2vw, 2.1rem);
+  line-height: 1.5;
+  color: var(--text);
+  text-shadow: 0 0 22px rgba(125, 211, 252, 0.3);
+}
+
+/* 小字展开段：正文字阶，dim（信息放开但让位给场景） */
+.s2-small {
+  margin-top: 1.6vh;
+  font-size: clamp(0.9rem, 1.7vw, 1.05rem);
+  line-height: 1.75;
+  color: rgba(232, 236, 244, 0.72);
+}
+
+.s2-small p + p {
+  margin-top: 0.45em;
+}
+
+/* 路径/命令名：等宽数据色（终端语言，简报 §2.2 字即图形） */
+.s2-code {
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.92em;
+  color: var(--mono);
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.4);
+}
+
+/* 合成标注（措辞诚实，PLAN §2.4）：最小字阶等宽 */
+.s2-note {
+  margin-top: 2vh;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: rgba(232, 236, 244, 0.5);
+}
+
+/* ---------- 第一幕场景 · S3 缓存分流（双色河 + 缓存盒，简报 §4 S3） ----------
+   类名 .s3- 前缀；场景 JS 在 src/scenes/s3.js。
+   文案/标签初始全隐（opacity 0），浮现由 scrub / 节拍逐帧写入内联样式，
+   CSS 不做 transition —— 滚动 lerp 已平滑，避免过渡叠写造成拖影。 */
+
+/* 文案块：左下角信息区（叉口与盒居中，文案让位 —— 一屏一个视线焦点，简报 §1.2）。
+   挂在 #ui（fixed inset 0）下，absolute 即视口坐标；bottom 17vh 让开 HUD 轨道区 */
+.s3-copy {
+  position: absolute;
+  left: 6vw;
+  bottom: 17vh;
+  max-width: 540px;
+  z-index: 12; /* #ui 层内、HUD(30) 之下 */
+  pointer-events: none;
+}
+
+/* 大字：核心句（正文引导层，与序章 .body-lead 同字阶语言） */
+.s3-lead {
+  font-weight: 700;
+  font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  color: var(--text);
+  text-shadow: 0 0 22px rgba(125, 211, 252, 0.28);
+  opacity: 0; /* 浮现由 JS scrub 写入 */
+}
+
+/* 小字：展开段（正文 400 dim，行距舒展） */
+.s3-body {
+  margin-top: 0.55em;
+  font-size: 0.86rem;
+  line-height: 1.75;
+  color: rgba(232, 236, 244, 0.6);
+}
+.s3-body p {
+  opacity: 0; /* 浮现由 JS scrub 写入（两段错峰） */
+}
+.s3-body p + p {
+  margin-top: 0.3em;
+}
+
+/* 合成标注：等宽数据层小字（措辞诚实，PLAN §2.4；分流比来源同步标注） */
+.s3-syn {
+  margin-top: 0.7em;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  color: rgba(125, 211, 252, 0.55);
+  opacity: 0; /* 浮现由 JS scrub 写入 */
+}
+
+/* 盒标签：极小等宽字符（字即图形，简报 §4.3）；left/top 由 JS 投影每帧刷新，
+   transform 把标签钉在盒顶上方（-115% 微抬，露出盒上沿） */
+.s3-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  transform: translate(-50%, -115%);
+  pointer-events: none;
+  opacity: 0; /* 拍3 入盒时由节拍补间浮现 */
+}
+.s3-label-meta {
+  color: var(--mono); /* 亮盒标签：青色微光（写更新） */
+  text-shadow: 0 0 8px rgba(125, 211, 252, 0.55);
+}
+.s3-label-facet {
+  color: rgba(232, 236, 244, 0.45); /* 哑盒标签压暗（复用不发光） */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .s3-label {
+    transition: none;
+  }
+}
+
+/* ---------- 第一幕场景（S1 命令命中，简报 §4 S1） ----------
+   终端面板挂 DOM 层（#ui），光河在 3D 层（#scene）；站内类一律 .s1- 前缀，
+   与 HUD 现有规则隔离（简报 §6.3）。DOM-3D 锚点衔接见 scenes/s1.js 的 anchor()。 */
+
+.s1-scene {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 终端面板：半透明 + 冷色细边 + 圆角小（简报 §4 终端细节）；
+   面板放屏幕中下部（top ≈55vh 居中），文案区在其下方 */
+.s1-terminal {
+  position: relative;
+  margin-top: 55vh;
+  width: min(520px, calc(100vw - 48px));
+  background: rgba(8, 12, 20, 0.72);
+  border: 1px solid rgba(90, 140, 200, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04);
+  opacity: 0; /* 入场由节拍淡入，避免首帧闪现 */
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden; /* 圆角裁切扫描线 */
+}
+
+/* 标题行：等宽小字；右缘「重新体验」链接（#ui 层全局 pointer-events none，链接单独放开） */
+.s1-term-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(90, 140, 200, 0.12);
+}
+
+.s1-term-title {
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: rgba(232, 236, 244, 0.45);
+}
+
+.s1-restart {
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(125, 211, 252, 0.55);
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+.s1-restart:hover {
+  color: var(--mono);
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.6);
+}
+
+.s1-restart:focus-visible {
+  outline: 2px solid var(--mono);
+  outline-offset: 3px;
+}
+
+/* 主体：等宽 13.5px（简报 13~14px）、行高 1.6（简报 1.55~1.65）、内边距 16~18px（简报 16~20px） */
+.s1-term-body {
+  padding: 16px 18px 18px;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+}
+
+.s1-prompt {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: rgba(232, 236, 244, 0.82);
+}
+
+.s1-prompt-sign {
+  color: var(--mono);
+}
+
+/* 块状光标：1ch × 1.15em 实心块 #7CF0FF @0.85；
+   闪 530ms on / 530ms off（简报 §4，近 CRT 标准） */
+.s1-cursor {
+  display: inline-block;
+  width: 1ch;
+  height: 1.15em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #7cf0ff;
+  opacity: 0.85;
+  animation: s1-blink 1.06s steps(1) infinite;
+}
+
+@keyframes s1-blink {
+  0%,
+  49.9% {
+    opacity: 0.85;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 输入中停闪常亮（JS 在首字处加类）；提交后常亮 200ms 再淡出由节拍 JS 驱动 */
+.s1-cursor.is-steady {
+  animation: none;
+  opacity: 0.85;
+}
+
+/* 命中表：标题行 15px（简报 15~16px） */
+.s1-match {
+  margin-top: 14px;
+}
+
+.s1-match-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(125, 211, 252, 0.85);
+  text-shadow: 0 0 12px rgba(125, 211, 252, 0.35);
+  opacity: 0; /* 由节拍浮现 */
+}
+
+/* 命中行：行间 stagger 45~60ms 入场由节拍 JS 驱动（简报 §4 连击感） */
+.s1-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.s1-row-tail {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.s1-row-name {
+  color: rgba(232, 236, 244, 0.62);
+}
+
+/* —— hit —— 标记：落定 dim；闪 80ms 硬边沿由节拍 JS 驱动（简报 §4/§5） */
+.s1-row-hit {
+  color: rgba(125, 211, 252, 0.45);
+  opacity: 0.55;
+}
+
+.s1-row-ms {
+  font-size: 12px;
+  color: rgba(232, 236, 244, 0.4);
+}
+
+/* 状态行 11.5px（简报 11~12px）：analyzing + 进度条 */
+.s1-analyzing {
+  margin-top: 14px;
+  font-size: 11.5px;
+  color: rgba(232, 236, 244, 0.55);
+  opacity: 0; /* 命令表结束后 120~180ms 才出现（简报 §4 拍3，勿过早） */
+}
+
+.s1-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.s1-progress-bar {
+  position: relative;
+  flex: 1;
+  height: 10px;
+  background: rgba(125, 211, 252, 0.08);
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+/* 确定性假进度 0→62% 400ms 内、再 hold（简报 §4：「引擎在跑，但结果是确定的」） */
+.s1-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(74, 168, 255, 0.7), rgba(125, 211, 252, 0.95));
+  box-shadow: 0 0 10px rgba(125, 211, 252, 0.5);
+}
+
+.s1-progress-pct {
+  font-size: 11.5px;
+  color: var(--mono);
+  min-width: 3em;
+  text-align: right;
+  opacity: 0;
+}
+
+/* 扫描线：仅面板内 1px、3~5% opacity（简报 §4 克制细节：全局扫线会土） */
+.s1-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: rgba(190, 215, 255, 0.9);
+  opacity: 0.04;
+  pointer-events: none;
+  animation: s1-scan 7s linear infinite;
+}
+
+@keyframes s1-scan {
+  from {
+    top: 0;
+  }
+  to {
+    top: 100%;
+  }
+}
+
+/* 站内文案区（面板下方；0.20~0.75 随滚动浮现，scrub 驱动；文案逐字锚定简报 §4） */
+.s1-copy {
+  margin-top: 6vh;
+  width: min(640px, calc(100vw - 48px));
+  text-align: center;
+}
+
+/* 大字核心句 */
+.s1-copy-big {
+  font-size: clamp(1.15rem, 2.2vw, 1.55rem);
+  font-weight: 700;
+  color: var(--text);
+  text-shadow: 0 0 22px rgba(125, 211, 252, 0.25);
+  opacity: 0;
+}
+
+/* 小字展开段 */
+.s1-copy-small {
+  margin-top: 1.2em;
+  font-size: clamp(0.85rem, 1.4vw, 0.98rem);
+  line-height: 1.8;
+  color: rgba(232, 236, 244, 0.66);
+  opacity: 0;
+}
+
+/* 合成标注 + 终端注记：小字、dim 色（简报 §4 措辞诚实） */
+.s1-copy-notes {
+  margin-top: 2.2em;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.8;
+  color: rgba(232, 236, 244, 0.42);
+  opacity: 0;
+}
+
+/* 尊重动效偏好（简报 §5）：光标不闪、扫描线静止；节拍时长由 s1.js 置 0 直接呈现 */
+@media (prefers-reduced-motion: reduce) {
+  .s1-cursor {
+    animation: none;
+    opacity: 0.85;
+  }
+  .s1-scanline {
+    animation: none;
+    top: 25%;
+    opacity: 0.02;
   }
 }

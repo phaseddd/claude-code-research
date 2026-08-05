@@ -6,8 +6,9 @@
 //   createHud({ uiEl, onSelect }) → { setSeg, dispose }
 //   - uiEl       DOM 层容器（#ui，pointer-events: none，由 main.js 创建）
 //   - onSelect   节点点击回调（main.js 接 timeline.skipTo）
-//   - setSeg(segId, prevId)  段切换联动：幕段更新节点/标题/数字滚动；
-//                            gate 段进入过渡态（标题 旧幕 → 新幕 + 轨道扫光）
+//   - setSeg(segId, prevId)  段切换联动：站/幕段更新节点/标题/数字滚动
+//                            （M3 站级:第一幕 s1→s2→s3 节点逐个点亮）；
+//                            gate 段进入过渡态（标题 旧站/幕 → 新站/幕 + 轨道扫光）
 //   - dispose()  移除 DOM、杀数字滚动补间
 //
 // 节点语义（状态机由 paintNodes 驱动 class）：
@@ -16,25 +17,33 @@
 //   is-in   当前幕其余节点（半亮）→ 幕内即将展开
 //   无 class = 未来幕（暗色描边）→ 尚未到达
 //
-// 数字滚动：当前数字 = 当前幕起始站号（act1→1 / act2→4 / act3→6），
-// 站间推进时 gsap 补间滚动（power2.out），是"站间推进有即时反馈"的计量层。
+// 数字滚动：当前数字 = 当前站/幕起始站号（M3 站级:s1→1 / s2→2 / s3→3；
+// 第二/三幕幕级:act2→4 / act3→6），站间推进时 gsap 补间滚动（power2.out），
+// 是"站间推进有即时反馈"的计量层。
 
 import gsap from 'gsap'
 
-// 幕 → 轨道区间映射：nodes 为该幕覆盖的站号（1~8），
-// 站名锚定 PLAN.md §2.2 三幕八站措辞（M3 起落真实场景时站名同步为场景标题）。
-// 随幕微染由 data-act（CSS 侧 --hud-accent）驱动，见 style.css
+// 段 → 轨道区间映射（M3 站级化，简报 §6.4）：
+//   第一幕细化为站级 s1/s2/s3（数字 1→2→3 滚动、节点逐个点亮，prevDone 驱动
+//   已完成态）；第二/三幕保持幕级（骨架，act2 → 节点 4、act3 → 节点 6，不动）。
+// prevDone = 进入本段前已完成的节点数（is-done 判定）；act = 所属幕
+// （第一幕三站同属 act1 —— 幕色微染不变，站间不换色，保持「幕」的色块感，简报 §6.4）。
+// 站名锚定 PLAN.md §2.2 三幕八站措辞；随幕微染由 data-act（CSS 侧 --hud-accent）驱动
 const STOPS = [
-  { seg: 'act1', nodes: [1, 2, 3], short: '第一幕 · 数据', next: '第二幕 · 理解' },
-  { seg: 'act2', nodes: [4, 5], short: '第二幕 · 理解', next: '第三幕 · 生成' },
-  { seg: 'act3', nodes: [6, 7, 8], short: '第三幕 · 生成', next: null },
+  { seg: 's1', nodes: [1], prevDone: 0, act: 'act1', short: '命令命中', next: '扫盘' },
+  { seg: 's2', nodes: [2], prevDone: 1, act: 'act1', short: '扫盘', next: '缓存分流' },
+  { seg: 's3', nodes: [3], prevDone: 2, act: 'act1', short: '缓存分流', next: '第二幕 · 理解' },
+  { seg: 'act2', nodes: [4, 5], prevDone: 3, act: 'act2', short: '第二幕 · 理解', next: '第三幕 · 生成' },
+  { seg: 'act3', nodes: [6, 7, 8], prevDone: 5, act: 'act3', short: '第三幕 · 生成', next: null },
 ]
-// gate → 夹住它的两幕（正向入口 / 出口）：gate 标题按穿越方向显示
+// gate → 夹住它的两段（正向入口 / 出口）：gate 标题按穿越方向显示
 // （正向"第二幕 → 第三幕"，反向"第三幕 → 第二幕"）——
 // 原实现恒用 prev.next 拼接，反向穿越时显示错误方向（act2 侧反穿显示
 // "第二幕 → 第三幕"）甚至 "→ null"（act3 侧反穿 prev.next=null，2026-08-05 实测）
 const GATE_DIR = {
-  gate1to2: ['act1', 'act2'],
+  g1: ['s1', 's2'], // 幕内轻量 gate（同幕色，简报 §6.1）
+  g2: ['s2', 's3'],
+  gate1to2: ['s3', 'act2'],
   gate2to3: ['act2', 'act3'],
 }
 const STATION_NAMES = [
@@ -112,18 +121,19 @@ export function createHud({ uiEl, onSelect = null } = {}) {
     })
   }
 
-  // 节点状态机：paintNodes(stop) 按当前幕重绘 8 个节点 class
+  // 节点状态机：paintNodes(stop) 按当前段重绘 8 个节点 class。
+  // 站级化（简报 §6.4）：is-done 由 prevDone 驱动 —— 第一幕内节点逐个点亮
+  // （s2 时节点 1 已 done、2 为 cur、3 待展开），而非整幕一次性标完
   const paintNodes = (stop) => {
-    const curIdx = STOPS.indexOf(stop)
     nodeEls.forEach((el, i) => {
       const n = i + 1
       const isCurStart = n === stop.nodes[0]
-      const isInCur = n <= stop.nodes[stop.nodes.length - 1] && n >= stop.nodes[0]
-      el.classList.toggle('is-done', curIdx > 0 && n < stop.nodes[0])
+      const isInCur = n <= stop.nodes[stop.nodes.length - 1] && n > stop.nodes[0]
+      el.classList.toggle('is-done', n <= stop.prevDone)
       el.classList.toggle('is-cur', isCurStart)
       el.classList.toggle('is-in', isInCur && !isCurStart)
     })
-    // 已完成部分的轨道填充：到当前幕起点节点中心（节点中心 = (n-0.5)/8）
+    // 已完成部分的轨道填充：到当前段起点节点中心（节点中心 = (n-0.5)/8）
     fillEl.style.width = `${((stop.nodes[0] - 0.5) / TOTAL) * 100}%`
   }
 
@@ -163,7 +173,9 @@ export function createHud({ uiEl, onSelect = null } = {}) {
         // 是不透明色，光晕过浓，2026-08-05 弃用）
         root.classList.remove('is-gating')
         current = stop
-        root.dataset.act = stop.seg
+        // data-act 用 stop.act（站级）而非 seg：第一幕三站同属 act1，
+        // 微染不换色（简报 §6.4 幕的色块感）
+        root.dataset.act = stop.act
         titleEl.textContent = stop.short
         paintNodes(stop)
         rollTo(stop.nodes[0])
@@ -179,8 +191,14 @@ export function createHud({ uiEl, onSelect = null } = {}) {
         const a = STOPS.find((s) => s.seg === pair?.[0])
         const b = STOPS.find((s) => s.seg === pair?.[1])
         if (a && b) {
-          const from = prevId === pair[0] ? a : b
-          const to = prevId === pair[0] ? b : a
+          // 方向判定：prevId 等于 pair[0]（从入口前一段正向进入）= 正向；
+          // prevId 等于 pair[1]（从出口后一段反穿回来）= 反向；
+          // 其余（快速滚动 target 一次跨多段，prev 不在本 gate 的 pair 内，如
+          // S3 直接跳 gate2to3）按正向兜底 —— 原逻辑把这种情况误判成反向，
+          // 显示 "第三幕 → 第二幕" 的错误方向（2026-08-05 实测）
+          const forward = prevId === pair[0] || !pair.includes(prevId)
+          const from = forward ? a : b
+          const to = forward ? b : a
           root.classList.add('is-gating')
           titleEl.innerHTML = `${from.short} <i class="hud-arrow">→</i> ${to.short}`
         }
