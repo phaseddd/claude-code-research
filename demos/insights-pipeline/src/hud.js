@@ -3,13 +3,14 @@
 // + 站标题 + 数字滚动反馈（站间推进的即时反馈）。
 //
 // 契约：
-//   createHud({ uiEl, onSelect }) → { setSeg, dispose }
+//   createHud({ uiEl, onSelect, onRestart }) → { setSeg, dispose }
 //   - uiEl       DOM 层容器（#ui，pointer-events: none，由 main.js 创建）
 //   - onSelect   节点点击回调（main.js 接 timeline.skipTo）
+//   - onRestart  常驻「回到序章」点击回调（main.js 接 backToPrologue；全站逃生口）
 //   - setSeg(segId, prevId)  段切换联动：站/幕段更新节点/标题/数字滚动
 //                            （M3 站级:第一幕 s1→s2→s3 节点逐个点亮）；
 //                            gate 段进入过渡态（标题 旧站/幕 → 新站/幕 + 轨道扫光）
-//   - dispose()  移除 DOM、杀数字滚动补间
+//   - dispose()  移除 DOM、杀数字滚动补间、撤节点/回到序章监听
 //
 // 节点语义（状态机由 paintNodes 驱动 class）：
 //   is-done 已完成幕的节点（青色实心 + 光晕）→ 数据已流过
@@ -60,7 +61,7 @@ const STATION_NAMES = [
 ]
 const TOTAL = STATION_NAMES.length
 
-export function createHud({ uiEl, onSelect = null } = {}) {
+export function createHud({ uiEl, onSelect = null, onRestart = null } = {}) {
   // ---------- 1. 创建 DOM（类名契约与 style.css 一致） ----------
   // 节点按钮：序号字符本身作图形（字即图形）；--i 供入场 stagger 的 animation-delay
   const nodesHtml = STATION_NAMES.map(
@@ -84,6 +85,10 @@ export function createHud({ uiEl, onSelect = null } = {}) {
       <div class="hud-counter" aria-hidden="true">
         <span class="hud-num">1</span><span class="hud-total"> / ${TOTAL}</span>
       </div>
+      <!-- 常驻「回到序章」（U5）：hud-bar 右缘的小链接，全站（S1→S8）一致，
+           取代 S1 终端内独享的「重新体验」（.s1-restart 将由 U2 移除，
+           过渡期内两者并存，本单元不改 s1.js）。← 是排版字符，字即图形 -->
+      <button class="hud-restart" type="button" aria-label="回到序章">← 回到序章</button>
     </div>
   `
   uiEl.appendChild(root)
@@ -146,6 +151,12 @@ export function createHud({ uiEl, onSelect = null } = {}) {
   }
   nodeEls.forEach((el) => el.addEventListener('click', onNodeClick))
 
+  // 「回到序章」：全站常驻逃生口（U5）。回调 = main.js 的 backToPrologue
+  // （销毁时间轴/HUD/渲染器 → 重建序章），与节点导航同走 click，无额外状态
+  const restartEl = root.querySelector('.hud-restart')
+  const onRestartClick = () => onRestart?.()
+  restartEl.addEventListener('click', onRestartClick)
+
   // 入场动画收尾：全部节点 stagger 完成后移除 .hud-enter。
   // 若不移除，`.hud-enter .hud-node`（0,2,0，文件末尾后声明）会覆盖
   // `.hud-node.is-cur` 的 hud-pulse 动画（同特异性后声明胜）→ 脉冲从未生效
@@ -204,9 +215,10 @@ export function createHud({ uiEl, onSelect = null } = {}) {
         }
       }
     },
-    // 销毁：撤节点点击监听、杀数字滚动补间、移除 DOM
+    // 销毁：撤节点/回到序章监听、杀数字滚动补间、移除 DOM
     dispose() {
       nodeEls.forEach((el) => el.removeEventListener('click', onNodeClick))
+      restartEl.removeEventListener('click', onRestartClick)
       numTween?.kill()
       root.remove()
     },
