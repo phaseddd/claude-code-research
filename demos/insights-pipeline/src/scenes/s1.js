@@ -6,7 +6,9 @@
 //     scene/camera/uiEl   三站共享的 3D 层与 DOM 层(由 main.js 装配,本站不建渲染器)
 //     river               共享光河实例(简报 §6.1:main.js 在 s1 enter 时 createRiver,
 //                         离开 S3 时 dispose —— 本站只用不建不毁)
-//     onRestart           终端右上角「重新体验」点击回调(main.js 注入,回到序章)
+//     onRestart           保留参数(演出化调整 2026-08-06:终端内「重新体验」按钮
+//                         已移除,「回到序章」改由 U5 的 HUD 常驻链接承担;
+//                         参数保留仅为保持 createS1 契约不变,本站不再使用)
 //
 // 画卷重构(2026-08-05 主人定稿):
 //   构图 = 左仪器柱(终端面板 + 文案同左缘同列宽,与河道右 2/3 呼应);
@@ -43,13 +45,20 @@ const RANGE_S1 = [0, 0.35]
 const TYPED_CMD = '/insights'
 // 逐字非匀速:标点略慢、字母略快(简报 §4「28~42ms/字符」;确定性,不随机)
 const CHAR_MS = { '/': 40, i: 28, n: 32, s: 32, g: 32, h: 32, t: 32 }
-// 命中表行(合成,简报 §4 措辞诚实注记:不代表真实命令表内容;耗时数字为设计参考值)
+// 命中演出行(演出化调整 2026-08-06,演出基线「S1 · 终端演剧情」):
+// 原 session:list / session:stats / cache:probe 内部命令名 + 耗时数字,
+// 对第一次进场的观众是噪音(基线:「观众无法解读」),改为「动作演出行」——
+// 两个角色(报告引擎/对话模型)的分工 + 历史会话入缓存,中文大白话紧跟英文
+// 术语;仍为合成数据,不代表真实命令表内容(措辞诚实注记不变,简报 §4)。
+// {en, zh} 结构为后续扩展留位(可加 ms/状态等字段,形状自由)
 const HITS = [
-  { name: 'session:list', ms: '0.8ms' },
-  { name: 'session:stats', ms: '1.1ms' },
-  { name: 'cache:probe', ms: '0.4ms' },
+  { en: 'engine takes over', zh: '报告引擎接手' },
+  { en: 'model steps back', zh: '对话模型退居二线' },
+  { en: 'history cached', zh: '历史会话入缓存' },
 ]
-const MATCH_TOTAL = SESSIONS.length // 12(MATCH 03/12 的分母)
+// 命中标题(演出化调整):原「MATCH 03/12 · 命中 3 项」的分母(12 = 会话数)
+// 观众无法解读,去掉分母,改为 built-in command 双语文案 —— 内置命令命中
+const MATCH_TITLE = 'built-in command · 内置命令命中'
 // 拍4 河宽输入(简报 §4 拍4):命令链命中的会话信息量 = tokens / 1000。
 // 任务规格钉死「s02+s03+s04 ≈ 54」;s02/s03/s04 恰为数据里最老三个 facet
 // 分支会话(ageDays 12/9/8,排除元会话,数据驱动不硬编码)。
@@ -88,7 +97,12 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
   let disposed = false
   let lastP = -1 // scrub p 判等（滚动静止时跳过重复写入）
 
-  // ---------- DOM:终端面板(挂 #ui 层)+ 站内文案(文案逐字锚定简报 §4,不得改写) ----------
+  // ---------- DOM:终端面板(挂 #ui 层)+ 站内文案 ----------
+  // 文案(演出化调整 2026-08-06,演出基线「S1 · 终端演剧情」):小字骨架句
+  // 「它命中命令表…两个角色,各司其职」保留,中段改写为与终端行措辞呼应
+  // (报告引擎接手/对话模型退居二线/历史会话入缓存);术语首现给大白话 ——
+  // 内置命令 = 不靠模型现场想(大字)、缓存 = 存档(小字括注)、
+  // 引擎/模型分工 = 干活 vs 递链接
   function buildDom() {
     root = document.createElement('div')
     root.className = 's1-scene'
@@ -96,17 +110,16 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
       <div class="s1-terminal">
         <div class="s1-term-bar">
           <span class="s1-term-title">~/insights</span>
-          <button class="s1-restart" type="button">重新体验</button>
         </div>
         <div class="s1-term-body">
           <div class="s1-prompt"><span class="s1-prompt-sign">&gt;</span> <span class="s1-typed"></span><span class="s1-cursor"></span></div>
           <div class="s1-match">
-            <div class="s1-match-title">MATCH ${String(HITS.length).padStart(2, '0')}/${MATCH_TOTAL} · 命中 ${HITS.length} 项</div>
+            <div class="s1-match-title">${MATCH_TITLE}</div>
             ${HITS.map(
               (h) => `
             <div class="s1-row">
-              <span class="s1-row-name">· ${h.name}</span>
-              <span class="s1-row-tail"><span class="s1-row-hit">—— hit ——</span><span class="s1-row-ms">${h.ms}</span></span>
+              <span class="s1-row-name">${h.en} · ${h.zh}</span>
+              <span class="s1-row-tail"><span class="s1-row-hit">—— hit ——</span></span>
             </div>`
             ).join('')}
           </div>
@@ -123,7 +136,7 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
       </div>
       <div class="s1-copy">
         <p class="s1-copy-big">/insights 是内置命令,不是模型现场想出来的。</p>
-        <p class="s1-copy-small">它命中命令表,屏幕上出现进度提示:'analyzing your sessions'。真正干活的是报告引擎;当前对话的模型只负责最后递链接 —— 两个角色,各司其职。</p>
+        <p class="s1-copy-small">它命中命令表:报告引擎接手、对话模型退居二线 —— 干活的是引擎,递链接的是模型。历史会话入缓存(存档),进度提示:'analyzing your sessions'。两个角色,各司其职。</p>
         <p class="s1-copy-notes">本演示使用合成示例数据<br>终端为演示的合成视觉 —— 引擎是纯代码流程,没有界面</p>
       </div>
     `
@@ -133,9 +146,6 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
     copyBig = root.querySelector('.s1-copy-big')
     copySmall = root.querySelector('.s1-copy-small')
     copyNotes = root.querySelector('.s1-copy-notes')
-
-    // 「重新体验」:右上角小链接,点击回到序章(回调由 main.js 注入 onRestart)
-    root.querySelector('.s1-restart').addEventListener('click', () => onRestart?.())
   }
 
   // ---------- DOM-3D 锚点(简报 §3.5):进度条右端 → 逆投影 → 沿视线走到 z=12 ----------
@@ -255,9 +265,28 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
       anaT
     )
     const progT = anaT + d(0.1)
-    // 确定性假进度 0→62% 400ms 内、再 hold(简报 §4:「引擎在跑,但结果是确定的」)
-    beats.to(fillEl, { width: '62%', duration: d(0.4), ease: 'none' }, progT)
+    // 确定性假进度 0→62% ~1.2s easeInOut(演出化调整 2026-08-06,演出基线
+    // 「62% 进度修复:观众亲眼看到进度从零走起」):原 0.4s linear 太快,
+    // 观众看到的是「62% 凭空出现」;拉长后进度条与数字同步从 0 爬到 62
+    // 停住 —— 引擎在跑的呼吸感。简报 §4「引擎在跑,但结果是确定的」不变,
+    // 拍4 62→100 与河变宽同步逻辑不变
+    beats.to(fillEl, { width: '62%', duration: d(1.2), ease: 'power1.inOut' }, progT)
     beats.to(pctEl, { opacity: 1, duration: d(0.05) }, progT)
+    // 数字与进度条同步爬升(代理对象每帧写入,同拍4 手法;DOM 初始 62% 在
+    // opacity 0 下不可见,首帧即被 0% 覆盖,不会闪出 62%)
+    const pct0 = { p: 0 }
+    beats.to(
+      pct0,
+      {
+        p: 62,
+        duration: d(1.2),
+        ease: 'power1.inOut',
+        onUpdate: () => {
+          pctEl.textContent = Math.round(pct0.p) + '%'
+        },
+      },
+      progT
+    )
 
     // ---- 拍4 河亮:视线焦点从终端移到河(简报 §4 拍4) ----
     // 叙事(2026-08-05 主人实测「不明所以」修复):进度条 62→100 与河变宽同步
@@ -266,7 +295,8 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
     // 注入前锋让源头先宽、波浪顺流而下(「数据从终端流入河」的物理)
     // 停顿 0.35s(原 0.55:grok 观众评审「停顿意义不明,像节奏漏拍」;
     // 预热后停顿有了内容 —— 河在微宽流动,停顿是「引擎在跑」的呼吸而非空档)
-    const T0 = progT + d(0.4) + d(0.35)
+    // 1.2 = 拍3 进度 0→62 的补间时长(演出化调整后从 0.4 拉长,拍4 起点随之后移)
+    const T0 = progT + d(1.2) + d(0.35)
     // 记录注入时刻(reduce 守卫:uTime 冻结时记录会让前锋卡在源头,不调即瞬达)
     beats.call(() => { if (!reducedMotion) river.injectInfoVolume() }, [], T0)
     // 宽度:平滑补间到信息量全量(简报 §3.3 河宽随信息量,连续量)
@@ -328,7 +358,7 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
       // 相机定位:cam-start(画卷全带视角;展卷游移由 scrub 驱动)
       camera.position.copy(CAM_START)
       camera.lookAt(CAM_LOOK_START)
-      // 河段窗口:S1 带(出生→右缘);「重新体验」重入时重置(旧值可能是 S3 的全河)
+      // 河段窗口:S1 带(出生→右缘);重入时重置(旧值可能是 S3 的全河)
       river.setVisibleRange(...RANGE_S1)
 
       buildDom()
