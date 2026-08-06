@@ -7,8 +7,8 @@
 //   - degraded  true 时无 WebGL2：显示全文 + 降级提示，无按住交互、不调 onEnter
 //   - onEnter   非降级时"按住完成 → 退场动画结束"后的回调（进入引擎）
 //
-// 时序（非降级）：按住 2.5s 完成 → 序章 0.5s 淡出上移 20px → dispose 清理
-//                 DOM → 调用 onEnter()，把"按住 → 黑场 → 进入引擎"串起来
+// 时序（非降级）：按住 1.25s 完成 → 序章 0.2s 纯淡出（无位移，位移已去掉）→
+//                 dispose 清理 DOM → 调用 onEnter()，把"按住 → 黑场 → 进入引擎"串起来
 // ============================================================
 import gsap from 'gsap'
 import { createHoldButton } from './hold.js'
@@ -16,7 +16,9 @@ import { isReducedMotion } from './utils.js'
 
 export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
   // ---------- 1. 创建 DOM（类名契约与 style.css 一致） ----------
-  // 文案逐字取自知识库事实（PLAN.md 2.1 定稿），不得改写删减
+  // 文案演出化调整（U1）：按演出基线重写 —— 去演示腔/卖点罗列腔，
+  // 用观众"按下回车、屏幕卡住"的亲身体验作钩子，悬念由标题承担，
+  // 信息量收敛（正文段落 7 → 4，聊天窗/流水线/点题保留），让观众更快到达"按住"互动
   const root = document.createElement('div')
   root.className = 'prologue'
   root.innerHTML = `
@@ -29,26 +31,28 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
       <span class="title-cn">回车之后，发生了什么？</span>
     </h1>
     <div class="prologue-body">
-      <p>你输入 /insights，回车。屏幕卡住几十秒 —— 然后聊天窗弹出这个：</p>
-      <!-- 聊天窗输出示例：两行英文 + file:// 链接（文本锚定知识页话术原文，非虚构；
-           等宽字体 = 数据与终端层，聊天窗是它天然场景） -->
+      <!-- 钩子（演出化调整）：用观众自己的亲身体验开场 —— 按下回车、屏幕卡住、
+           只剩 analyzing 在转；"你"字开头把观众拉回自己的经历，不介绍 /insights 是什么 -->
+      <p>你也遇到过吧：按下回车，屏幕卡住几十秒 ——<br>只剩一行字在转：analyzing your sessions…</p>
+      <p class="body-lead">几十秒后，聊天窗弹出一个链接：</p>
+      <!-- 聊天窗输出示例：黑盒的"盒"（两行英文 + file:// 链接，文本锚定知识页话术原文，
+           非虚构；等宽字体 = 数据与终端层，聊天窗是它天然场景） -->
       <div class="prologue-chat" aria-label="聊天窗输出示例">
         <p>Your shareable insights report is ready:</p>
         <p class="chat-file">file:///Users/you/.claude/usage-data/report.html</p>
         <p>Want to dig into any section or try one of the suggestions?</p>
       </div>
-      <!-- 正文信息分层（与标题/聊天窗组成四层字阶）：
-           body-lead 黑体 700 白（引导）> body-detail 黑体 400 dim（展开）
-           > pipeline 青色箭头（数据点缀，呼应 HUD 轨道）> body-theme 思源宋体 900（点题） -->
-      <p class="body-lead">点开这个链接，是一份漂亮的 HTML 使用报告：</p>
-      <p class="body-detail">这个月你用 Claude 做了什么、哪里顺畅、哪里卡壳，<br>甚至还有几条“要不要试试这个功能”的建议。</p>
-      <p class="body-detail">这份报告不是凭空出现的。在你等待的那段时间里，</p>
-      <p class="body-lead">一条看不见的流水线在工作：</p>
+      <!-- 全剧地图（演出化调整）：流水线环节保留，措辞是"故事预告"不是"功能列表" -->
+      <p class="body-detail">这份报告不会凭空出现 —— 那几十秒里，一条流水线在暗中开工：</p>
       <div class="pipeline" aria-label="报告引擎流水线六个环节">
-        <span>扫盘</span><i class="pipe-arrow">→</i><span>缓存</span><i class="pipe-arrow">→</i><span>压缩</span><i class="pipe-arrow">→</i><span>打标签</span><i class="pipe-arrow">→</i><span>并行写七章</span><i class="pipe-arrow">→</i><span>合成总览</span>
+        <span>扫盘</span><i class="pipe-arrow">→</i><span>缓存</span><i class="pipe-arrow">→</i><span>压缩</span><i class="pipe-arrow">→</i><span>打标签</span><i class="pipe-arrow">→</i><span>写七章</span><i class="pipe-arrow">→</i><span>合成总览</span>
       </div>
-      <p class="body-detail">本演示带你走进那段等待时间</p>
-      <p class="body-theme">一条数据河的旅程。</p>
+      <!-- 点题（演出化调整）：悬念已由标题"回车之后，发生了什么？"抛出，
+           收尾落在演出承诺上 —— 这场演出就是那段没人看见的时间。
+           分层字阶契约（沿用原结构，style.css .prologue-* 段定义）：
+           无类 p 默认字阶（钩子）> body-lead 黑体 700（引导）> body-detail dim（展开）
+           > pipeline 青色箭头 > body-theme 思源宋体 900（点题） -->
+      <p class="body-theme">这场演出，就是那段没人看见的时间。</p>
     </div>
     <p class="prologue-source">基于 @cometix/claude-code 2.1.209 静态源码分析<br>配套知识页：<a class="prologue-link" href="../../analysis/mechanisms/claude-code-insights-slash-command.md" target="_blank" rel="noopener">机制 · 命令全程解析</a> · <a class="prologue-link" href="../../analysis/concepts/claude-code-insights-prompts.md" target="_blank" rel="noopener">概念 · 内嵌提示词全文</a></p>
     ${
@@ -62,8 +66,10 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
         </svg>
         <span class="hold-core">/</span>
       </div>
-      <div class="hold-label">按住按钮，模拟运行 /insights</div>
-      <p class="hold-hint">按住别松手 —— 引擎跑起来需要一点时间，就像真的。</p>
+      <!-- 引导句口语化（演出化调整）：呼应点题"那段没人看见的时间"，
+           按住 = 回到那几十秒；提示按 UI 说话（圆环转满）而非"模拟运行"腔 -->
+      <div class="hold-label">按住，回到那几十秒</div>
+      <p class="hold-hint">别松手，等圆环转满。</p>
     </div>`
     }
   `
@@ -142,7 +148,7 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
       // 文字裁剪因此失效 → 整行渐变标题不可见（实测 blur(0px) 残留导致）
       // 2026-08-06 时长/stagger 全减半（0.45/0.02 → 0.225/0.01），文字出现加快一倍
       .to(titleChars, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.225, stagger: 0.01, clearProps: 'filter,transform' })
-      .to(bodyPs, { opacity: 1, y: 0, duration: 0.2, stagger: 0.15 }, '+=0.05') // 三段背景依次
+      .to(bodyPs, { opacity: 1, y: 0, duration: 0.2, stagger: 0.15 }, '+=0.05') // 正文各段（钩子/引导/聊天窗/流水线/点题）逐个依次浮现
       .to(
         tailEls,
         { opacity: 1, y: 0, duration: 0.175, stagger: 0.05, onComplete: restorePointer },
