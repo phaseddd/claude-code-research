@@ -9,7 +9,8 @@
 // 星云 = 单个 THREE.Points(一个 draw call,简报 §7.1「粒子 draw call = 1」):
 //   亮星 = STATS.stars(合成会话,视觉锚点,亮度/色相 = 新旧)
 //   中景星 / 远景尘 = 随机历史(数量自由,构成星云壮丽)
-//   元会话星 = s12 isMeta(弃置角落:小、哑、无闪烁、缓慢下坠)
+//   元会话星 = s12 isMeta(弃置角落:小、哑、无闪烁、缓慢下坠;
+//   抽河时径向弹飞 + 暗红「拒绝」光闪,演出化调整(U3))
 // 闪烁 / 展开 / 扫盘点亮 / 抽取转化全部在 shader 内做(attribute + uniform 驱动,
 // 简报 §3.1「不做 JS 逐粒子循环」)—— 本场景零逐星循环。
 //
@@ -20,7 +21,8 @@
 //   拍3 抽河      0~0.4s 近中景星位置 lerp 向河采样点(RIVER.getMidPoint() 附近)
 //                 → 0.4~1.2s 星→粒子转化(缩小变暗、色转入 river.body 蓝)
 //                 → 1.2~3.5s 主流成形:河宽随已抽取量变宽(全量最宽)+ setFlow('s2')
-//                 + pulseAt(0.5, 1);元会话不入河,边缘淡出;完成后星云 dim ×0.55
+//                 + pulseAt(0.5, 1);元会话不入河,被弹飞 + 暗红光闪后淡出(弃置演出,U3);
+//                 完成后星云 dim ×0.55
 
 import * as THREE from 'three'
 import gsap from 'gsap'
@@ -91,6 +93,7 @@ const VERT = /* glsl */ `
   uniform vec3  uExtractTarget; // 河采样点(星云局部坐标)
   uniform float uConvert;       // 拍3b 0→1 星→粒子转化(缩小变暗,色转入 river.body)
   uniform float uDim;           // 拍3c 0→1 星云整体 dim ×0.55(河成为焦点)
+  uniform float uReject;        // 元会话星弃置演出(演出化调整(U3)):0→1→0 一次性「拒绝」脉冲
   uniform vec3  uBodyBlue;      // river.body 当前色(转化目标色)
   uniform float uPixelRatio;    // DPR(已钳制 2)
   uniform sampler2D uMap;       // 64² 软斑纹理
@@ -102,6 +105,15 @@ const VERT = /* glsl */ `
   const float SCAN_MIN = -3.4; // 扫盘带中心范围(局部 x,与 JS 侧 SCAN_MIN/SCAN_MAX 同步)
   const float SCAN_MAX = 3.4;
   const float SCAN_WC = 0.35;
+  // 元会话星弃置演出参数(演出化调整(U3);与 JS 侧 META_FALL 配合):
+  //   META_FLING —— 抽河时径向弹飞距离(原 aFall×2≈0.06 单位肉眼不可读,
+  //                  1.4 ≈ 星云半径 1/3,「弹出去」可读)
+  //   META_REJECT_COL / META_REJECT_I —— 暗红「拒绝」光闪的色与亮度脉冲
+  //                   (只一次,不做常驻;原亮度 0.12 太暗,脉冲 1.6 才可见;
+  //                   尺寸同步 ×(1+rej×1.8),2px 小点放大才读得到「闪」)
+  const float META_FLING = 1.4;
+  const vec3  META_REJECT_COL = vec3(0.66, 0.19, 0.22);
+  const float META_REJECT_I = 1.6;
 
   void main() {
     // 微漂(有界振荡):振幅在 aDrift,相位与闪烁同源(错峰)
@@ -109,8 +121,11 @@ const VERT = /* glsl */ `
     // 元会话星:缓慢下坠(单调;简报 §4.2「可选缓慢下坠」);
     // 抽河期间不入河 —— 向外抛散(grok 复核:单纯淡出不可读,
     // 「旁路拒绝」需个体动画,2026-08-05 修正;normalize(position) = 远离星云中心)
+    // 演出化调整(U3):外抛轨迹加强 —— 原 aFall×uExtract×2(≈0.06 单位)看不到;
+    // 改专用系数 META_FLING,抽河时被径向弹飞 ≈1.4 单位,「弃置」动作可读
+    float isMeta = step(0.001, aFall); // aFall>0 ⇔ 元会话星(全 shader 共用判定)
     pos.y -= aFall * uTime;
-    pos += normalize(position) * aFall * uExtract * 2.0;
+    pos += normalize(position) * isMeta * uExtract * META_FLING;
 
     // 抽河(拍3a):近中景星位置 lerp 向河采样点,带少量抖动避免聚成一点;
     // r = aPhase 归一化,抽取按相位错峰(0~0.4s 内依次被「勾」出)
@@ -119,12 +134,12 @@ const VERT = /* glsl */ `
     vec3 jitter = vec3(sin(aPhase * 7.0), cos(aPhase * 5.0), sin(aPhase * 11.0)) * 0.15;
     pos = mix(pos, uExtractTarget + jitter, pull);
 
-    // 亮度:闪烁(非同步) + 扫盘带点亮(拍2) + 抽河后星云整体 dim ×0.55(拍3c)
+    // 亮度分量(闪烁非同步 + 扫盘带点亮(拍2) + 抽河后星云整体 dim ×0.55(拍3c);
+    // intensity 的声明与计算在下方弃置演出块内,只此一处,避免重复声明)
     float flick = 1.0 + aFlick * sin(TWO_PI * uTime / aPeriod + aPhase);
     float scanX = mix(SCAN_MIN, SCAN_MAX, uScanT);
     float band = uScanGlow * exp(-pow((position.x - scanX) / SCAN_WC, 2.0));
     float dim = 1.0 - 0.45 * uDim;
-    float intensity = aBright * flick * dim + band;
 
     // 展开(拍1):按 aPhase 错峰依次淡入散开(禁止全体同步闪)
     float reveal = smoothstep(r * 0.65, r * 0.65 + 0.35, uReveal);
@@ -133,13 +148,29 @@ const VERT = /* glsl */ `
     // 元会话不入河(aExtract=0),抽河期间边缘淡出
     float conv = aExtract * clamp((uConvert - r * 0.3) / 0.7, 0.0, 1.0);
     float remain = 1.0 - conv;
-    // 元会话星:抽河一开始(0.4s 窗口内)就熄灭(与抛散同步,不入河)
-    float fade = 1.0 - step(0.001, aFall) * smoothstep(0.0, 0.5, uExtract);
+    // 元会话星:演出化调整(U3)原「抽河一开始就熄灭」(0~0.5 窗口,未飞出已消失);
+    // 改为随「拒绝」脉冲淡出 —— 弹飞 + 红闪全程可见(满亮 2.1~2.73s 随 hold,
+    // 2.73~3.33s 随缓衰渐隐),观众看到「弹出去 → 红光 → 熄灭」完整动作;
+    // 展开/扫盘期间(uExtract≈0)星照常显示,reduced-motion(uReject=0)直接熄灭
+    float metaHide = smoothstep(0.15, 0.55, uExtract) * (1.0 - clamp(uReject * 2.0, 0.0, 1.0));
+    float fade = 1.0 - isMeta * metaHide;
+
+    // 元会话星弃置演出(演出化调整(U3)):抽河同帧的一次性暗红「拒绝」光闪
+    // (uReject 0→1→0,只一次,不做常驻)+ 亮度脉冲 ——「这不是你的对话」有身体感;
+    // 其余星(uReject 无效、isMeta=0)不受影响,颜色/亮度路径不变
+    float rej = isMeta * uReject;
+    vec3 col = mix(aColor, uBodyBlue, conv);
+    col = mix(col, META_REJECT_COL, rej);
+    // intensity 全 shader 唯一声明处(上方只备好分量;避免同作用域重复声明)
+    float intensity = aBright * flick * dim + band;
+    intensity = mix(intensity, META_REJECT_I, rej);
 
     vAlpha = reveal * remain * fade;
-    vColor = mix(aColor, uBodyBlue, conv) * intensity;
+    vColor = col * intensity;
 
-    float sizeScale = (0.15 + 0.85 * reveal) * (1.0 - 0.85 * conv);
+    // 元会话星拒绝光闪期间尺寸放大(演出化调整(U3)):2px 小点闪红肉眼不可读,
+    // 峰值 ×2.8 让「闪」有身体感(只影响 isMeta 星,其余星 sizeScale 不变)
+    float sizeScale = (0.15 + 0.85 * reveal) * (1.0 - 0.85 * conv) * (1.0 + rej * 1.8);
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     gl_PointSize = clamp(aSize * uPixelRatio * (300.0 / -mv.z), 1.0, 96.0) * sizeScale;
     gl_Position = projectionMatrix * mv;
@@ -261,7 +292,8 @@ export function createS2({ scene, camera, uiEl, river }) {
   }
 
   // 元会话星(简报 §4.2):尺寸 ×0.7、饱和度 ×0.25、亮度 0.12、无闪烁、缓慢下坠;
-  // 位置放星云边缘角落(弃置感)——局部 (2.2, -1.4, -0.5) 在椭球内边缘
+  // 位置放星云边缘角落(弃置感)——局部 (2.2, -1.4, -0.5) 在椭球内边缘;
+  // 抽河时的弹飞 + 暗红「拒绝」光闪在 shader 内完成(演出化调整(U3))
   {
     const mc = new THREE.Color('#9AB4D0')
     const hsv = mc.getHSL({})
@@ -333,6 +365,7 @@ export function createS2({ scene, camera, uiEl, river }) {
     uExtractTarget: { value: EXTRACT_TARGET.clone() },
     uConvert: { value: 0 },
     uDim: { value: 0 },
+    uReject: { value: 0 }, // 元会话星弃置演出(U3):一次性脉冲,节拍内 0→1→0
     uBodyBlue: { value: BODY_BLUE.clone() },
     uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
     uMap: { value: makeSoftTexture() },
@@ -435,6 +468,13 @@ export function createS2({ scene, camera, uiEl, river }) {
       .to(uniforms, { uScanGlow: 0, duration: 0.3 }, 1.9)
       // 拍3 抽河(物质转化,简报 §4 S2 拍3):0~0.4s 勾向河床 → 0.4~1.2s 星→粒子转化
       .to(uniforms, { uExtract: 1, duration: 0.4, ease: 'power1.in' }, 2.1)
+      // 元会话星弃置演出(演出化调整(U3)):抽河同帧,暗红「拒绝」光闪 0→1→0(只一次,
+      // 不做常驻;与弹飞轨迹同步,光闪峰值 ≈ 弹飞前段(2.3s,弹飞 ~30% 处)。
+      // 峰值满亮 hold 0.45s(2.28~2.73)+ 0.6s 缓衰 —— 太短的闪(0.2s 内灭)观众
+      // 读不到,hold 让「被弹开的那颗在拒绝」有可读的一瞬
+      .to(uniforms, { uReject: 1, duration: 0.18, ease: 'power2.in' }, 2.1)
+      .to(uniforms, { uReject: 1, duration: 0.45 }, 2.28)
+      .to(uniforms, { uReject: 0, duration: 0.6, ease: 'power2.out' }, 2.73)
       .to(uniforms, { uConvert: 1, duration: 0.8, ease: 'power2.inOut' }, 2.5)
       // → 1.2~3.5s 主流成形:河宽随已抽取量变宽(全量最宽)+ 流速切 s2 + 星云抽火花
       .to(flow, {

@@ -955,15 +955,19 @@ body:has(.hud[data-act='act3']) {
 /* ---------- 第一幕场景 · S2 扫盘（会话星云文案覆盖层） ----------
    站内滚动编排（简报 §4 共用结构）：0.2~0.75 文案浮现（大字 → 小字 → 合成标注），
    透明度/位移由 s2.js 的 scrub 逐段驱动（滚动 = 看，不在这里做 CSS 动画）。
-   文案逐字锚定 PLAN §2.2 S2，不得改写删减。 */
+   文案逐字锚定 PLAN §2.2 S2，不得改写删减。
+   演出化调整(U3):文案位置统一 —— 原顶部居中(top 9vh / left 50%)改为
+   左列布局(与 .s1-copy 同款:margin-left 6vw 左对齐、--s1-col 同宽),
+   与 S1/S3 站内文案同一根左列。 */
 
 .s2-copy {
   position: absolute;
   top: 9vh;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(640px, 88vw);
-  text-align: center;
+  left: 6vw;
+  /* 与 .s1-scene 的 --s1-col 同公式(min(520px, 27.5vw, calc(100vw - 48px)));
+     --s1-col 定义在 .s1-scene 作用域内,此处单独写同式保持视觉同列 */
+  width: min(520px, 27.5vw, calc(100vw - 48px));
+  text-align: left;
   pointer-events: none;
   z-index: 12; /* 3D 场景之上、HUD（30）之下 */
 }
