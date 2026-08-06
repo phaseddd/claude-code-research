@@ -12,13 +12,13 @@ import gsap from 'gsap'
 import { mountPrologue } from './prologue.js'
 import { createScroll } from './scroll.js'
 import { createTimeline } from './timeline.js'
-import { createRiver, RIVER } from './river.js'
+import { createRiver, RIVER, RIVER_SPLIT } from './river.js'
 import { createS1, S1_CAM_END, S1_LOOK_END } from './scenes/s1.js'
 import { createS2, S2_CAM_ENTER, S2_LOOK_ENTER } from './scenes/s2.js'
 import { createS3 } from './scenes/s3.js'
 import { createHud, ACT_TITLES } from './hud.js'
 import { STATS } from './data/sessions.js'
-import { easeInOutSine, isReducedMotion } from './utils.js'
+import { easeInOutSine, isReducedMotion, rampCameraPath } from './utils.js'
 
 // 尊重动效偏好：黑场三段式淡入在 reduce 下直接呈现
 const reducedMotion = isReducedMotion()
@@ -75,24 +75,22 @@ const LIGHT_GATE_DURATION = 1.8 // 幕内轻量 gate（秒,简报 §6.1:1.5~2s�
 
 // ---------- g1 相机贴河滑行关键帧（演出化 2026-08-06,U6） ----------
 // 原 cameraPath = [S1_CAM_END, S2_CAM_ENTER] 两点直线插值 —— 镜头在河外的
-// 空间直线上平移,河的走向只是背景。现改为沿河采样:内部关键帧 = RIVER._main
-// 在 t∈[0.35,1]（S1 出口 → 叉口,即 gate 全河窗口对应的河段）的采样点,
-// 取横向分量 x —— 镜头轨迹复制河的 S 形扫掠（源头右缘 → 星云左摆 → 叉口居中）,
-// 「追着河飞」;y/z 在两端点间线性过渡（镜头保持在河上方的前景带,不扎进
-// 河心粒子流）。首尾关键帧 = S1_CAM_END / S2_CAM_ENTER（与 S1 站末 scrub /
-// S2 enter 精确衔接,无缝契约不变）。采样从 t=0.35 起:源头段（t<0.35）的
-// 锚点是运行时才定的（S1 enter setSource）,模块级预计算不受其直接改写;
-// setSource 的 updateArcLengths 会轻微重排整条曲线的弧长参数,采样误差
-// <0.1 单位量级,肉眼不可感（近似稳定,非精确解耦）
-const RIVER_CAM_SAMPLE_FROM = 0.35 // 河窗分割点 = S1 出口（采样起点）;
-// 与 s1.js RANGE_S1 / s2.js enter 的 0.35 同义（三处手抄为既有格局,
-// 本文件内命名收敛,防本文件再漂移）
+// 空间直线上平移,河的走向只是背景。现改为沿河采样:内部关键帧 = RIVER
+// 在 t∈[RIVER_SPLIT,1]（S1 出口 → 叉口,即 gate 全河窗口对应的河段）的
+// 采样点,取横向分量 x —— 镜头轨迹复制河的 S 形扫掠（源头右缘 → 星云左摆 →
+// 叉口居中）,「追着河飞」;y/z 在两端点间线性过渡（镜头保持在河上方的前景带,
+// 不扎进河心粒子流）。首尾关键帧 = S1_CAM_END / S2_CAM_ENTER（与 S1 站末
+// scrub / S2 enter 精确衔接,无缝契约不变）。采样从 RIVER_SPLIT 起:源头段
+// （t<RIVER_SPLIT）的锚点是运行时才定的（S1 enter setSource）,模块级预计算
+// 不受其直接改写;setSource 的 updateArcLengths 会轻微重排整条曲线的弧长参数,
+// 采样误差 <0.1 单位量级,肉眼不可感（近似稳定,非精确解耦）。
+// 采样起点与河窗分割点同源(river.js RIVER_SPLIT 单一来源,原三处手抄 0.35)
 const CAM_RIVER_N = 6 // 内部采样点数（演出基线:5~8）
 function buildRiverCamPath() {
   const path = [S1_CAM_END.clone()]
   for (let i = 1; i <= CAM_RIVER_N; i++) {
     const s = i / (CAM_RIVER_N + 1) // 内部关键帧等分（不占首尾,保证端点精确）
-    const rp = RIVER._main.getPoint(RIVER_CAM_SAMPLE_FROM + (1 - RIVER_CAM_SAMPLE_FROM) * s)
+    const rp = RIVER.getPoint(RIVER_SPLIT + (1 - RIVER_SPLIT) * s)
     path.push(
       new THREE.Vector3(
         rp.x,
@@ -119,7 +117,7 @@ function makeSceneSegment({ id, create, scrollVh }) {
     id,
     scrollVh,
     enter(ctx) {
-      inst = create({ ...shared, onRestart: backToPrologue })
+      inst = create({ ...shared })
       inst.enter()
     },
     scrub(ctx, p) {
@@ -149,7 +147,6 @@ function makeSceneSegment({ id, create, scrollVh }) {
 //   cameraPath / lookPath  门内相机滑轨关键帧链(首帧 = 旧站 scrub 终点、
 //                末帧 = 下一站 enter 相机位 → 无缝;中间帧沿河采样,镜头
 //                「追着河飞」而非空间直线;位置按 p 分段插值,look 端点线性)
-const _gateLook = new THREE.Vector3() // 相机 lookAt 暂存(与 utils.rampCamera 同款,避免每帧 new)
 function makeFadeGate({ id, duration = GATE_DURATION, minOpacity = 0, cameraPath = null, lookPath = null, segRange = null }) {
   return {
     id,
@@ -167,19 +164,12 @@ function makeFadeGate({ id, duration = GATE_DURATION, minOpacity = 0, cameraPath
       if (segRange && shared.river) shared.river.setVisibleRange(...segRange)
     },
     scrub(ctx, p) {
-      // 相机贴河滑行(2026-08-06 U6):位置沿关键帧链分段插值 —— rampCamera 只
-      // 支持两点插值,多段链按 p 逐段 lerp(链参数 = easeInOutSine(p),与时间轴
-      // 自动推进同源);lookAt 保持端点线性,视野从旧站出口平滑转向下一站锚点
-      // (终点无缝契约不变,终点由场景模块导出的 CAM_ENTER/LOOK_ENTER 对齐)
+      // 相机贴河滑行(2026-08-06 U6):utils.rampCameraPath 沿关键帧链分段插值
+      // (链参数 = easeInOutSine(p),与时间轴自动推进同源);lookAt 保持端点线性,
+      // 视野从旧站出口平滑转向下一站锚点(终点无缝契约不变,终点由场景模块
+      // 导出的 CAM_ENTER/LOOK_ENTER 对齐)
       if (shared.camera && cameraPath && lookPath) {
-        const k = easeInOutSine(p)
-        const n = cameraPath.length - 1
-        const f = k * n
-        const i = Math.min(Math.floor(f), n - 1)
-        const u = f - i
-        shared.camera.position.lerpVectors(cameraPath[i], cameraPath[i + 1], u)
-        _gateLook.lerpVectors(lookPath[0], lookPath[1], k)
-        shared.camera.lookAt(_gateLook)
+        rampCameraPath(shared.camera, cameraPath, lookPath[0], lookPath[1], easeInOutSine(p))
       }
       // 三段式(浅 dip 版):0~0.35 旧场景淡出到 minOpacity → 0.35 卸旧
       // → 0.65 预挂新场景 → 0.65~1 淡入回全亮
@@ -240,10 +230,10 @@ const segments = [
     lookPath: [S1_LOOK_END, S2_LOOK_ENTER],
   }),
   makeSceneSegment({ id: 's2', create: createS2, scrollVh: SCENE_VH }),
-  // g2(S2→S3):同样幕内轻量 gate(河全程全亮,同 U6 演出化);segRange [0,1] 让
-  // 源头段(t<0.35)在转场期提前亮起 —— S2 相机位下源头(z≈12)在镜头后方,
-  // 视觉无害;终点窗口与 S3 enter 自设的 [0,1] 一致,统一代码路径
-  makeFadeGate({ id: 'g2', duration: LIGHT_GATE_DURATION, minOpacity: 0.9, segRange: [0, 1] }),
+  // g2(S2→S3):同样幕内轻量 gate(河全程全亮,同 U6 演出化)。不再配 segRange:
+  // 源头段(t<0.35)在 S2 相机位下处于镜头后方,切全河观众也看不见;且 S3
+  // enter 本就自设全河窗口 —— 传 segRange 无视觉差异,冗余配置已删(g1 独用)
+  makeFadeGate({ id: 'g2', duration: LIGHT_GATE_DURATION, minOpacity: 0.9 }),
   makeSceneSegment({ id: 's3', create: createS3, scrollVh: SCENE_VH }),
   makeFadeGate({ id: 'gate1to2' }),
   makeActSegment({

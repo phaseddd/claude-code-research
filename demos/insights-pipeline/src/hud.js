@@ -86,8 +86,7 @@ export function createHud({ uiEl, onSelect = null, onRestart = null } = {}) {
         <span class="hud-num">1</span><span class="hud-total"> / ${TOTAL}</span>
       </div>
       <!-- 常驻「回到序章」（U5）：hud-bar 右缘的小链接，全站（S1→S8）一致，
-           取代 S1 终端内独享的「重新体验」（.s1-restart 将由 U2 移除，
-           过渡期内两者并存，本单元不改 s1.js）。← 是排版字符，字即图形 -->
+           取代已移除的 S1 终端内独享「重新体验」（U2 删除）。← 是排版字符，字即图形 -->
       <button class="hud-restart" type="button" aria-label="回到序章">← 回到序章</button>
     </div>
   `

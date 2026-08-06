@@ -74,6 +74,10 @@ const FACET_CTRL = [
 const MAIN_PTS = 96 // uniform 数组长度(采样精度;96 段分段线性在 ~40 单位河长下 ≈0.4 单位/段)
 const BRANCH_PTS = 48
 export const FORK_T = 0.88 // 叉口前 12% 为色过渡带(简报 §4.3「叉口前 8~12%」)
+// S1→S2 站界 = 河窗口分割点(S1 [0,SPLIT] / S2 [SPLIT,1])= g1 相机采样起点。
+// 单一来源:s1.js RANGE_S1 / s2.js setVisibleRange / main.js RIVER_CAM_SAMPLE_FROM
+// 都引用它 —— 改站界只动这一处(原三处手抄 0.35,漏改则镜头轨迹与可见河段错位)
+export const RIVER_SPLIT = 0.35
 
 // 路径采样对象:场景模块用 RIVER.getMidPoint() 等对齐星云 / 缓存盒(与 shader 内采样同源)
 export const RIVER = {
@@ -88,6 +92,11 @@ export const RIVER = {
   getMidPoint() {
     return this._main.getPoint(0.5)
   }, // S2 星云中心
+  // 主干任意位置采样(g1 相机贴河滑行等跨模块用;替代摸 _main 私有字段,
+  // 曲线存储实现变更时调用方不断链)
+  getPoint(t) {
+    return this._main.getPoint(t)
+  },
   getBranchEnd(branch) {
     return (branch === 'meta' ? this._meta : this._facet).getPoint(1)
   }, // 缓存盒位置

@@ -170,10 +170,10 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
       onComplete: () => {
         if (done) return
         done = true
-        // 按住完成 → 序章退场：0.5s 淡出并上移 20px（退场期间禁点，防二次触发）
+        // 按住完成 → 序章退场：0.2s 纯淡出（退场期间禁点，防二次触发；
+        // 无位移 —— 上移+加速曲线会形成"抽一下"的干扰，黑场停顿由 main.js 在
+        // 场景侧接管；时长 2026-08-06 减半加快进入 S1）
         holdEl.style.pointerEvents = 'none'
-        // 黑场三段式第一段：纯淡出（去掉位移 —— 20px 上移+加速曲线
-        // 会形成"抽一下"的干扰，黑场停顿由 main.js 在场景侧接管）
         exitTween = gsap.to(root, {
           opacity: 0,
           duration: reducedMotion ? 0.01 : 0.2, // 2026-08-06 减半（0.4 → 0.2），加快进入 S1

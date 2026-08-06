@@ -26,7 +26,7 @@
 
 import * as THREE from 'three'
 import gsap from 'gsap'
-import { RIVER, COL as RIVER_COL } from '../river.js'
+import { RIVER, COL as RIVER_COL, RIVER_SPLIT } from '../river.js'
 import { STATS, starBrightness } from '../data/sessions.js'
 import { makeSoftTexture, SOFT_POINT_FRAG, easeInOutQuad, scrubFade, rampCamera, isReducedMotion } from '../utils.js'
 
@@ -111,9 +111,12 @@ const VERT = /* glsl */ `
   //   META_REJECT_COL / META_REJECT_I —— 暗红「拒绝」光闪的色与亮度脉冲
   //                   (只一次,不做常驻;原亮度 0.12 太暗,脉冲 1.6 才可见;
   //                   尺寸同步 ×(1+rej×1.8),2px 小点放大才读得到「闪」)
+  //   META_REJECT_HIDE —— 抽河期间熄灭窗口系数(rej 达 0.5 前星已不可见,
+  //                   弹飞动作由 META_FLING 承担,熄灭只是陪衬)
   const float META_FLING = 1.4;
   const vec3  META_REJECT_COL = vec3(0.66, 0.19, 0.22);
   const float META_REJECT_I = 1.6;
+  const float META_REJECT_HIDE = 2.0;
 
   void main() {
     // 微漂(有界振荡):振幅在 aDrift,相位与闪烁同源(错峰)
@@ -152,7 +155,7 @@ const VERT = /* glsl */ `
     // 改为随「拒绝」脉冲淡出 —— 弹飞 + 红闪全程可见(满亮 2.1~2.73s 随 hold,
     // 2.73~3.33s 随缓衰渐隐),观众看到「弹出去 → 红光 → 熄灭」完整动作;
     // 展开/扫盘期间(uExtract≈0)星照常显示,reduced-motion(uReject=0)直接熄灭
-    float metaHide = smoothstep(0.15, 0.55, uExtract) * (1.0 - clamp(uReject * 2.0, 0.0, 1.0));
+    float metaHide = smoothstep(0.15, 0.55, uExtract) * (1.0 - clamp(uReject * META_REJECT_HIDE, 0.0, 1.0));
     float fade = 1.0 - isMeta * metaHide;
 
     // 元会话星弃置演出(演出化调整(U3)):抽河同帧的一次性暗红「拒绝」光闪
@@ -469,12 +472,12 @@ export function createS2({ scene, camera, uiEl, river }) {
       // 拍3 抽河(物质转化,简报 §4 S2 拍3):0~0.4s 勾向河床 → 0.4~1.2s 星→粒子转化
       .to(uniforms, { uExtract: 1, duration: 0.4, ease: 'power1.in' }, 2.1)
       // 元会话星弃置演出(演出化调整(U3)):抽河同帧,暗红「拒绝」光闪 0→1→0(只一次,
-      // 不做常驻;与弹飞轨迹同步,光闪峰值 ≈ 弹飞前段(2.3s,弹飞 ~30% 处)。
-      // 峰值满亮 hold 0.45s(2.28~2.73)+ 0.6s 缓衰 —— 太短的闪(0.2s 内灭)观众
-      // 读不到,hold 让「被弹开的那颗在拒绝」有可读的一瞬
+      // 不做常驻;与弹飞轨迹同步,光闪峰值 ≈ 弹飞前段)。峰值满亮 hold + 缓衰 ——
+      // 太短的闪(0.2s 内灭)观众读不到,hold 让「被弹开的那颗在拒绝」有可读的一瞬。
+      // 后两段用 '>' 相对前一段末尾,时长调整不手算位置链(原 2.28/2.73 手算)
       .to(uniforms, { uReject: 1, duration: 0.18, ease: 'power2.in' }, 2.1)
-      .to(uniforms, { uReject: 1, duration: 0.45 }, 2.28)
-      .to(uniforms, { uReject: 0, duration: 0.6, ease: 'power2.out' }, 2.73)
+      .to(uniforms, { uReject: 1, duration: 0.45 }, '>')
+      .to(uniforms, { uReject: 0, duration: 0.6, ease: 'power2.out' }, '>')
       .to(uniforms, { uConvert: 1, duration: 0.8, ease: 'power2.inOut' }, 2.5)
       // → 1.2~3.5s 主流成形:河宽随已抽取量变宽(全量最宽)+ 流速切 s2 + 星云抽火花
       .to(flow, {
@@ -499,8 +502,9 @@ export function createS2({ scene, camera, uiEl, river }) {
       // 相机与 g1 门内滑轨终点精确衔接(画卷无缝,main.js 引用 S2_CAM_ENTER)
       camera.position.copy(S2_CAM_ENTER)
       camera.lookAt(nebulaCenter)
-      // 河段窗口:右缘 → 叉口 [0.35,1](开场河从右缘进入 = 承接 S1 出口,画卷不断流)
-      river.setVisibleRange(0.35, 1)
+      // 河段窗口:右缘 → 叉口 [RIVER_SPLIT,1](开场河从右缘进入 = 承接 S1 出口,
+      // 画卷不断流;站界单一来源 river.js RIVER_SPLIT,原字面量 0.35 手抄)
+      river.setVisibleRange(RIVER_SPLIT, 1)
       // 宽度连续(2026-08-05 画卷重构):不归零 —— S1 已注满命中会话的信息量,
       // 站界收缩会暴露「河断了」的错觉;拍3 抽河再随抽取量 ramp 到全量最宽
       // (宽度叙事:源头窄 → S1 注入 → 星云汇聚最宽 → 分流变细)

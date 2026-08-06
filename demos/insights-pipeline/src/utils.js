@@ -26,6 +26,19 @@ export function rampCamera(camera, from, lookFrom, to, lookTo, k) {
   camera.lookAt(_look.copy(lookFrom).lerp(lookTo, k))
 }
 
+// ---------- 相机沿多点路径 ramp（g1 门内滑轨用：path = 关键帧链，look 两端线性） ----------
+// 与 rampCamera 同款内部暂存（避免每帧 new）；k 已缓动（easeInOutSine 等），
+// 在路径链上分段线性插值 —— 镜头轨迹可复制河的 S 形扫掠，而非空间直线
+const _lookPath = new THREE.Vector3()
+export function rampCameraPath(camera, path, lookFrom, lookTo, k) {
+  const n = path.length - 1
+  const f = k * n
+  const i = Math.min(Math.floor(f), n - 1)
+  const u = f - i
+  camera.position.lerpVectors(path[i], path[i + 1], u)
+  camera.lookAt(_lookPath.copy(lookFrom).lerp(lookTo, k))
+}
+
 // ---------- 粒子纹理:64² 径向软斑 + smoothstep 外圈(禁止硬圆点,简报 §3.1) ----------
 // 中心 alpha 1.0、半径 40% 内保持高亮、外 60% 指数衰减
 export function makeSoftTexture() {

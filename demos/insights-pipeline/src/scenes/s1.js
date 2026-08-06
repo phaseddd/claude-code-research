@@ -26,7 +26,7 @@ import * as THREE from 'three'
 import gsap from 'gsap'
 import { SESSIONS } from '../data/sessions.js'
 import { COLORS } from '../theme.js'
-import { COL as RIVER_COL } from '../river.js'
+import { COL as RIVER_COL, RIVER_SPLIT } from '../river.js'
 import { easeInOutQuad, scrubFade, rampCamera, isReducedMotion } from '../utils.js'
 
 // ---------- 参数(简报 §4 S1 基线;偏离处见注释,§0.6「改了要能说出为什么」) ----------
@@ -39,9 +39,11 @@ const CAM_LOOK_START = new THREE.Vector3(1.7, -0.46, 11.5)
 export const S1_CAM_END = new THREE.Vector3(2.2, -0.1, 11.5)
 export const S1_LOOK_END = new THREE.Vector3(0.85, -1.59, 8.0)
 // 河段可见窗口(画卷站界,与 river.js uSegRange 配套):
-//   S1 出生→右缘 [0,0.35](淡出带 [0.32,0.35])/ S2 [0.35,1](淡入同带)→ 重叠带无缝衔接
+//   S1 出生→右缘 [0,RIVER_SPLIT](淡出带 [RIVER_SPLIT-0.03,RIVER_SPLIT])/
+//   S2 [RIVER_SPLIT,1](淡入同带)→ 重叠带无缝衔接
 //   S2 窗口由 s2 自身 enter 设置（交接不在此处，删除了原 dispose 里的 HANDOFF 冗余写）
-const RANGE_S1 = [0, 0.35]
+//   站界单一来源 = river.js RIVER_SPLIT(s2/main 同引用,改站界只动一处)
+const RANGE_S1 = [0, RIVER_SPLIT]
 const TYPED_CMD = '/insights'
 // 逐字非匀速:标点略慢、字母略快(简报 §4「28~42ms/字符」;确定性,不随机)
 const CHAR_MS = { '/': 40, i: 28, n: 32, s: 32, g: 32, h: 32, t: 32 }
@@ -50,11 +52,11 @@ const CHAR_MS = { '/': 40, i: 28, n: 32, s: 32, g: 32, h: 32, t: 32 }
 // 对第一次进场的观众是噪音(基线:「观众无法解读」),改为「动作演出行」——
 // 两个角色(报告引擎/对话模型)的分工 + 历史会话入缓存,中文大白话紧跟英文
 // 术语;仍为合成数据,不代表真实命令表内容(措辞诚实注记不变,简报 §4)。
-// {en, zh} 结构为后续扩展留位(可加 ms/状态等字段,形状自由)
+// 字符串数组即可(唯一用法 = 行名渲染;留位式对象形态无现值,去掉)
 const HITS = [
-  { en: 'engine takes over', zh: '报告引擎接手' },
-  { en: 'model steps back', zh: '对话模型退居二线' },
-  { en: 'history cached', zh: '历史会话入缓存' },
+  'engine takes over · 报告引擎接手',
+  'model steps back · 对话模型退居二线',
+  'history cached · 历史会话入缓存',
 ]
 // 命中标题(演出化调整):原「MATCH 03/12 · 命中 3 项」的分母(12 = 会话数)
 // 观众无法解读,去掉分母,改为 built-in command 双语文案 —— 内置命令命中
@@ -82,7 +84,9 @@ const GLOW_HIT = '0 0 10px rgba(125,211,252,0.7), 0 0 22px rgba(74,168,255,0.35)
 const HIT_DIM = 'rgba(125, 211, 252, 0.45)' // hit 标记落定色(与 CSS .s1-row-hit 同)
 
 // river 为必传参数（main.js 引擎级创建共享河，本站只用不建不毁）
-export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) {
+// 无 onRestart:「回到序章」职责已移交 HUD 常驻按钮(main.js createHud 接线),旧
+// 终端内按钮移除时该参数已无使用者,签名保持最小
+export function createS1({ scene, camera, uiEl, river } = {}) {
   const reducedMotion = isReducedMotion()
   const d = (x) => (reducedMotion ? 0 : x) // 简报 §5:reduce 下节拍直接呈现(gsap duration 0)
 
@@ -118,7 +122,7 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
             ${HITS.map(
               (h) => `
             <div class="s1-row">
-              <span class="s1-row-name">${h.en} · ${h.zh}</span>
+              <span class="s1-row-name">${h}</span>
               <span class="s1-row-tail"><span class="s1-row-hit">—— hit ——</span></span>
             </div>`
             ).join('')}
@@ -191,6 +195,23 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
     const pctEl = root.querySelector('.s1-progress-pct')
 
     const beats = gsap.timeline({ defaults: { ease: 'power2.out' } })
+    // 进度数字补间(拍3/拍4 共用):gsap 不能直接补间 textContent,代理对象每帧写回;
+    // 「N%」显示格式集中于此 —— 改格式只动一处(原两处复制粘贴微变)
+    function tweenPct(el, from, to, duration, ease, at) {
+      const proxy = { p: from }
+      beats.to(
+        proxy,
+        {
+          p: to,
+          duration,
+          ease,
+          onUpdate: () => {
+            el.textContent = Math.round(proxy.p) + '%'
+          },
+        },
+        at
+      )
+    }
     // 面板斩截闪(命中/MATCH 与注入完成顶点;remove + reflow 重启动画)
     const flashTerm = () => {
       termEl.classList.remove('s1-hit-flash')
@@ -265,28 +286,19 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
       anaT
     )
     const progT = anaT + d(0.1)
-    // 确定性假进度 0→62% ~1.2s easeInOut(演出化调整 2026-08-06,演出基线
+    // 确定性假进度 0→62% easeInOut(演出化调整 2026-08-06,演出基线
     // 「62% 进度修复:观众亲眼看到进度从零走起」):原 0.4s linear 太快,
     // 观众看到的是「62% 凭空出现」;拉长后进度条与数字同步从 0 爬到 62
     // 停住 —— 引擎在跑的呼吸感。简报 §4「引擎在跑,但结果是确定的」不变,
-    // 拍4 62→100 与河变宽同步逻辑不变
-    beats.to(fillEl, { width: '62%', duration: d(1.2), ease: 'power1.inOut' }, progT)
+    // 拍4 62→100 与河变宽同步逻辑不变。
+    // PROG_TARGET/PROG_CLIMB 单点命名:拍4 起点 T0 由 PROG_CLIMB 派生,
+    // 改目标/时长只动这两处(原 62/1.2 手抄多处,漏改则进度与数字跳变、拍4 脱节)
+    const PROG_TARGET = 62
+    const PROG_CLIMB = 1.2
+    beats.to(fillEl, { width: `${PROG_TARGET}%`, duration: d(PROG_CLIMB), ease: 'power1.inOut' }, progT)
     beats.to(pctEl, { opacity: 1, duration: d(0.05) }, progT)
-    // 数字与进度条同步爬升(代理对象每帧写入,同拍4 手法;DOM 初始 62% 在
-    // opacity 0 下不可见,首帧即被 0% 覆盖,不会闪出 62%)
-    const pct0 = { p: 0 }
-    beats.to(
-      pct0,
-      {
-        p: 62,
-        duration: d(1.2),
-        ease: 'power1.inOut',
-        onUpdate: () => {
-          pctEl.textContent = Math.round(pct0.p) + '%'
-        },
-      },
-      progT
-    )
+    // 数字与进度条同步爬升(DOM 初始 62% 在 opacity 0 下不可见,首帧即被 0% 覆盖)
+    tweenPct(pctEl, 0, PROG_TARGET, d(PROG_CLIMB), 'power1.inOut', progT)
 
     // ---- 拍4 河亮:视线焦点从终端移到河(简报 §4 拍4) ----
     // 叙事(2026-08-05 主人实测「不明所以」修复):进度条 62→100 与河变宽同步
@@ -295,8 +307,8 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
     // 注入前锋让源头先宽、波浪顺流而下(「数据从终端流入河」的物理)
     // 停顿 0.35s(原 0.55:grok 观众评审「停顿意义不明,像节奏漏拍」;
     // 预热后停顿有了内容 —— 河在微宽流动,停顿是「引擎在跑」的呼吸而非空档)
-    // 1.2 = 拍3 进度 0→62 的补间时长(演出化调整后从 0.4 拉长,拍4 起点随之后移)
-    const T0 = progT + d(1.2) + d(0.35)
+    // PROG_CLIMB = 拍3 进度 0→62 的补间时长(演出化调整后从 0.4 拉长,拍4 起点随之后移)
+    const T0 = progT + d(PROG_CLIMB) + d(0.35)
     // 记录注入时刻(reduce 守卫:uTime 冻结时记录会让前锋卡在源头,不调即瞬达)
     beats.call(() => { if (!reducedMotion) river.injectInfoVolume() }, [], T0)
     // 宽度:平滑补间到信息量全量(简报 §3.3 河宽随信息量,连续量)
@@ -313,19 +325,8 @@ export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) 
     )
     // 进度条 62→100 与宽度同起点同长同 ease(「加载完成 → 数据注入」因果)
     beats.to(fillEl, { width: '100%', duration: d(1.2), ease: 'power2.out' }, T0)
-    const pct = { p: 62 } // textContent 不能直接补间,代理对象每帧写入
-    beats.to(
-      pct,
-      {
-        p: 100,
-        duration: d(1.2),
-        ease: 'power2.out',
-        onUpdate: () => {
-          pctEl.textContent = Math.round(pct.p) + '%'
-        },
-      },
-      T0
-    )
+    // 拍4 数字(1.2 = 注入补间时长,与河宽同长;tweenPct 共享手法)
+    tweenPct(pctEl, PROG_TARGET, 100, d(1.2), 'power2.out', T0)
     // 流速错峰:宽度补间完成后 +0.1s 才「唰」(影评人 2026-08-05 两轮:0.35s/0.7s
     // 时宽度还在爬升,「宽波」和「加速」被读成一起涨;补间 1.2s 完成后宽度已到位,
     // 观众先读「信息量上来了」,再整体加速,两拍可分)

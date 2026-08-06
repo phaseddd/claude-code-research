@@ -217,10 +217,13 @@ export function createS3({ scene, camera, uiEl, river }) {
     const ff = { v: 0 } // facet 确认闪
     beats = gsap.timeline({ defaults: { ease: 'power2.out' } })
     // facet 闪灰序列：80ms 上亮 → 短暂峰值 → 灭回基线（峰值 ≈100ms，80ms 规格 + 余量）
+    // REUSE 标签直接挂链尾 ——「闪结束后浮现」语义写在链上(原 flashSeq.duration()
+    // 派生是运行时求隐式总长,追加内容会让时序悄悄漂移)
     const flashSeq = gsap.timeline()
     flashSeq
       .to(ff, { v: 1, duration: 0.08, ease: 'none', onUpdate: () => setFacetFlash(ff.v) })
       .to(ff, { v: 0, duration: 0.28, ease: 'power2.out', onUpdate: () => setFacetFlash(ff.v) }, '+=0.02')
+      .to(labelFacet, { opacity: 1, duration: 0.3 })
     beats
       // 拍1 汇聚：信息量全量（第一幕最宽）短暂停留，让观众看见最宽段
       .to({}, { duration: 0.45 })
@@ -243,12 +246,10 @@ export function createS3({ scene, camera, uiEl, river }) {
       .add(flashSeq, '<')
       .to(mi, { v: 1, duration: 0.55, ease: 'power2.out', onUpdate: () => setMetaIntensity(mi.v) }, '<')
       // 标签与状态语义对齐（演出化调整，2026-08-06）：
-      // WRITE 在 meta 亮起（写入中）同刻浮现；REUSE 等 facet 确认闪结束
-      // 后浮现并保持 ——「闪后保持」= 复用确认是持久状态，不跟 80ms 闪光一起灭。
-      .to([labelMeta], { opacity: 1, duration: 0.3 }, '<')
-      // REUSE 浮现位置由 flashSeq.duration()（闪总长 0.38s）派生，闪结束后 0.02s；
-      // 若闪时长调整，REUSE 仍自动落在闪后（不写死魔数 0.4）
-      .to([labelFacet], { opacity: 1, duration: 0.3 }, `<${flashSeq.duration() + 0.02}`)
+      // WRITE 在 meta 亮起（写入中）同刻浮现；REUSE 挂 flashSeq 链尾 = facet
+      // 确认闪结束后浮现并保持 ——「闪后保持」= 复用确认是持久状态，
+      // 不跟 80ms 闪光一起灭（见 flashSeq 定义处）
+      .to(labelMeta, { opacity: 1, duration: 0.3 }, '<')
       // 结算：两支河退潮变细（简报 §4.3；公式按任务给定，决策记录 5）
       .to({}, { duration: 0.3, onStart: () => river.setInfoVolume(STATS.metaInfo + STATS.facetInfo * 0.7) })
   }
