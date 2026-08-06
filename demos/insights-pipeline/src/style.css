@@ -1099,7 +1099,8 @@ body:has(.hud[data-act='act3']) {
   overflow: hidden; /* 圆角裁切扫描线 */
 }
 
-/* 标题行：等宽小字；右缘「重新体验」链接（#ui 层全局 pointer-events none，链接单独放开） */
+/* 标题行：等宽小字（演出化调整 2026-08-06：终端内「重新体验」按钮已移除，
+   「回到序章」改由 U5 的 HUD 常驻链接承担，S1 不再有独享按钮） */
 .s1-term-bar {
   display: flex;
   align-items: center;
@@ -1113,29 +1114,6 @@ body:has(.hud[data-act='act3']) {
   font-size: 12px;
   letter-spacing: 0.02em;
   color: rgba(232, 236, 244, 0.45);
-}
-
-.s1-restart {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: rgb(var(--mono-rgb) / 0.55);
-  background: none;
-  border: none;
-  padding: 2px 6px;
-  cursor: pointer;
-  pointer-events: auto;
-  transition: color 0.15s ease, text-shadow 0.15s ease;
-}
-
-.s1-restart:hover {
-  color: var(--mono);
-  text-shadow: 0 0 10px rgb(var(--mono-rgb) / 0.6);
-}
-
-.s1-restart:focus-visible {
-  outline: 2px solid var(--mono);
-  outline-offset: 3px;
 }
 
 /* 主体：等宽 13.5px（简报 13~14px）、行高 1.6（简报 1.55~1.65）、内边距 16~18px（简报 16~20px） */
@@ -1221,15 +1199,12 @@ body:has(.hud[data-act='act3']) {
   color: rgba(232, 236, 244, 0.62);
 }
 
-/* —— hit —— 标记：落定 dim；闪 80ms 硬边沿由节拍 JS 驱动（简报 §4/§5） */
+/* —— hit —— 标记：落定 dim；闪 80ms 硬边沿由节拍 JS 驱动（简报 §4/§5）。
+   演出化调整 2026-08-06：行尾耗时数字（.s1-row-ms）已随内部命令名一同移除，
+   命中行改为「动作演出行」，节奏（stagger / hit 闪 / 源头脉冲）不变 */
 .s1-row-hit {
   color: rgb(var(--mono-rgb) / 0.45);
   opacity: 0.55;
-}
-
-.s1-row-ms {
-  font-size: 12px;
-  color: rgba(232, 236, 244, 0.4);
 }
 
 /* 状态行 11.5px（简报 11~12px）：analyzing + 进度条 */
@@ -1257,7 +1232,9 @@ body:has(.hud[data-act='act3']) {
   overflow: hidden;
 }
 
-/* 确定性假进度 0→62% 400ms 内、再 hold（简报 §4：「引擎在跑，但结果是确定的」） */
+/* 确定性假进度 0→62% ~1.2s easeInOut、再 hold（演出化调整 2026-08-06：
+   原 0.4s 太快，观众看到的是「62% 凭空出现」；拉长让进度从零走起。
+   简报 §4：「引擎在跑，但结果是确定的」不变） */
 .s1-progress-fill {
   position: absolute;
   left: 0;
@@ -1332,7 +1309,8 @@ body:has(.hud[data-act='act3']) {
   }
 }
 
-/* 站内文案区（面板下方；0.20~0.75 随滚动浮现，scrub 驱动；文案逐字锚定简报 §4）
+/* 站内文案区（面板下方；0.20~0.75 随滚动浮现，scrub 驱动；措辞按演出基线
+   「S1 · 终端演剧情」与终端行呼应，2026-08-06 演出化调整）
    画卷重构:从居中改为与面板同左缘同列宽的左对齐柱(仪器柱叙事,根治两张皮);
    文案整体稳居河道带之下(出生 57%H 起步、柱右缘 33.5%W vs 河道 x>34%W,不重叠) */
 .s1-copy {
@@ -1372,13 +1350,23 @@ body:has(.hud[data-act='act3']) {
   }
 }
 
-/* 窄屏兜底(<1044px 宽):面板 27.5vw 窄于最长命中行内容,行名收 ellipsis 防折行
-   (review 2026-08-05,顺手补防;目标视口无碍) */
-@media (max-width: 1040px) {
+/* 窄屏兜底:面板 27.5vw 窄于最长命中行内容,行名收 ellipsis 防折行。
+   (review 2026-08-05,顺手补防;目标视口无碍)
+   演出化调整 2026-08-06:命中行改为中英双语动作演出行(如
+   "engine takes over · 报告引擎接手"),行宽比原内部命令名 +60px;
+   命中标题改为双语 "built-in command · 内置命令命中" 也比原
+   "MATCH 03/12 · 命中 3 项" 宽约 80px。两者放不下的临界宽度
+   (~1331px 行 / ~1150px 标题) 一并由 ≤1360px 兜底断点覆盖 */
+@media (max-width: 1360px) {
   .s1-row {
     flex-wrap: nowrap;
   }
   .s1-row-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .s1-match-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
