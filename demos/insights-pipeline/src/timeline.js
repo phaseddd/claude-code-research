@@ -37,12 +37,10 @@
 //   动画时间源唯一（本时间轴的 t），预挂段在 gate 淡入前就开始渲染（黑场转场期间画面在动）。
 //
 // ctx 原语（段回调可调用）：
-//   skipTo(id) / advance()（推到下一段起点，M2 TAP HOLD 用）/
-//   fadeScene(v)（注入的 #scene 透明度控制，黑场三段式；写入记录影子值）/
+//   skipTo(id) / fadeScene(v)（注入的 #scene 透明度控制，黑场三段式；写入记录影子值）/
 //   teardownOld()（执行推迟的旧段 teardown）/ preEnterNext()（预挂载下一段场景，幂等）
 
-const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2
-const clamp = (v, min, max) => Math.min(max, Math.max(min, v))
+import { easeInOutSine, clamp01 } from './utils.js'
 const REVERSE_LOCK_FRAMES = 30 // 反向意图锁存帧数（≈0.5s @60fps）：检测到反滚后保持释放钳制
 
 /**
@@ -99,11 +97,12 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null,
     // 0. 转场接续：切走未走完的 autoScroll 段（wheel 硬切 / 反向穿越）时，
     //    透明度从当前值线性补间到 1 —— 黑场中途不停车、不跳变。
     //    force（skipTo 显式跳转）语义是"直接呈现"，瞬间归 1
+    //    接续时长按淡入段速率（fadeInShare 比例段内 0→1）折算剩余进度；
+    //    fadeInShare 与 gate 段三段式门槛同源（main.js makeFadeGate 配置）
     const leavingAuto = prev?.autoScroll && prev !== next
     if (leavingAuto) {
       if (!force && sceneOpacity < 0.999) {
-        // 接续时长按淡入段速率（0.35 比例段内 0→1）折算剩余进度
-        fadeTo(1, (1 - sceneOpacity) * (prev.duration ?? 3.5) * 0.35)
+        fadeTo(1, (1 - sceneOpacity) * (prev.duration ?? 3.5) * (prev.fadeInShare ?? 0.35))
       } else {
         setSceneOpacity(1)
       }
@@ -145,11 +144,6 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null,
 
   const ctx = {
     skipTo,
-    advance() {
-      // 推到下一段起点（M2 TAP HOLD 完成时用；M1 站间连续滚动暂不调用）
-      const next = segs[activeIndex() + 1]
-      if (next && scroll) scroll.snapTo(next.start)
-    },
     fadeScene: setSceneOpacity,
     teardownOld() {
       // 幂等：gate 黑场中途卸下旧场景
@@ -186,7 +180,7 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null,
     if (active?.autoScroll) {
       fadeTween = null
       elapsed += dt
-      const p = clamp(elapsed / (active.duration ?? 3.5), 0, 1)
+      const p = clamp01(elapsed / (active.duration ?? 3.5))
       const forward = active.start + easeInOutSine(p) * active.scrollVh
       // 反向意图检测（帧间差分 + 锁存）：target 比上一帧下降 = 用户正在反滚 →
       // 释放下限钳制（不 setTarget），target 自由穿出 gate 回到前一段。修复
@@ -205,18 +199,15 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null,
       // 的 leavingAuto 接续补间把新幕从黑场淡入（无白屏）。
       if (target < lastTarget) reverseLock = REVERSE_LOCK_FRAMES
       else if (reverseLock > 0) reverseLock--
-      if (reverseLock > 0) {
-        active.scrub?.(ctx, p)
-      } else {
-        scroll.setTarget(Math.max(target, forward))
-        active.scrub?.(ctx, p)
-      }
+      // 钳制分支唯一差异 = 是否强制推进 target；scrub 两分支共用
+      if (reverseLock === 0) scroll.setTarget(Math.max(target, forward))
+      active.scrub?.(ctx, p)
       lastTarget = target
     }
 
     // 转场接续补间推进（gate 被打断后 从当前透明度 → 1，线性同速）
     if (fadeTween) {
-      const k = clamp((t - fadeTween.t0) / fadeTween.dur, 0, 1)
+      const k = clamp01((t - fadeTween.t0) / fadeTween.dur)
       setSceneOpacity(fadeTween.from + (fadeTween.to - fadeTween.from) * k)
       if (k >= 1) fadeTween = null
     }
@@ -225,17 +216,21 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null,
     // autoScroll 段已由上方时间驱动，跳过防止双写
     const curSeg = locate(current)
     if (curSeg?.scrollVh && !curSeg.autoScroll) {
-      curSeg.scrub?.(ctx, clamp((current - curSeg.start) / curSeg.scrollVh, 0, 1))
+      curSeg.scrub?.(ctx, clamp01((current - curSeg.start) / curSeg.scrollVh))
     }
     // 注：M1 的"视觉段离开 gate 兜底归 1"已删除（2026-08-05）——时间驱动重构后
     // opacity 归 1 各有责任方（gate 自然走完末帧写 1 / 硬切由接续补间 / skipTo 由
     // force 分支），不再有残留中间值；原兜底反而会在正向硬切时误杀接续补间（0.26
     // → 瞬间 1 的抖动，实测复现）。
 
-    // 渲染 / 动画驱动：视觉段 ∪ 逻辑段 ∪ 预挂段（去重后各调一次 update）
+    // 渲染 / 动画驱动：视觉段 ∪ 逻辑段 ∪ 预挂段（去重后各调一次 update；
+    // 常是同一段，if 链去重避免每帧 new Set）
     // 场景不自持 rAF，时间源唯一；反滚跨段过渡期旧段画面不冻结
-    const driving = new Set([curSeg, active, preEnteredSeg].filter(Boolean))
-    for (const seg of driving) seg.update?.(ctx, t, dt)
+    curSeg?.update?.(ctx, t, dt)
+    if (active && active !== curSeg) active.update?.(ctx, t, dt)
+    if (preEnteredSeg && preEnteredSeg !== curSeg && preEnteredSeg !== active) {
+      preEnteredSeg.update?.(ctx, t, dt)
+    }
   }
 
   // ---------- 任意跳转：瞬移 + 强制挂载目标段 ----------
@@ -278,9 +273,6 @@ export function createTimeline({ segments = [], scroll = null, fadeScene = null,
         active.teardown?.(ctx)
         active = null
       }
-    },
-    get current() {
-      return active?.id ?? null
     },
     // 每帧入口：由 scroll 的 onFrame 注入（main.js 装配）
     onFrame,

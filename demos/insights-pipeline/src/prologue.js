@@ -12,6 +12,7 @@
 // ============================================================
 import gsap from 'gsap'
 import { createHoldButton } from './hold.js'
+import { isReducedMotion } from './utils.js'
 
 export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
   // ---------- 1. 创建 DOM（类名契约与 style.css 一致） ----------
@@ -126,7 +127,7 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
   }
 
   // 尊重动效偏好：reduce 时跳过入场动画，直接呈现全部内容（JS 侧同样生效）
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const reducedMotion = isReducedMotion()
   let entrance = null
   if (reducedMotion) {
     gsap.set(titleChars, { opacity: 1, y: 0, filter: 'blur(0px)' })

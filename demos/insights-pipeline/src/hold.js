@@ -3,6 +3,8 @@
 // 松开后 500ms 内再按住可续接进度，超时则进度归零并触发 onCancel。
 // 参照零大学 Tg 类机制简化：回落直接归零，不做衰减动画（KISS）。
 
+import { clamp01 } from './utils.js'
+
 const CIRC = 289.03 // 进度环周长 2π × 46，与 CSS stroke-dasharray 一致
 const RESUME_WINDOW = 500 // 松开后允许续按的窗口（ms）
 
@@ -86,7 +88,7 @@ export function createHoldButton({
   // 每帧按按下以来经过的时间推进进度；达标即完成
   const tick = (now) => {
     rafId = null
-    progress = Math.min(1, Math.max(0, (now - downTime) / (duration * 1000)))
+    progress = clamp01((now - downTime) / (duration * 1000))
     setRing(progress)
     if (onProgress) onProgress(progress)
     if (progress >= 1) {

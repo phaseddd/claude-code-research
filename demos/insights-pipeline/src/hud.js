@@ -23,6 +23,9 @@
 
 import gsap from 'gsap'
 
+// 幕标题单一来源（main.js 的 act-skeleton 标题也引用这里，改措辞只动一处）
+export const ACT_TITLES = { act2: '第二幕 · 理解', act3: '第三幕 · 生成' }
+
 // 段 → 轨道区间映射（M3 站级化，简报 §6.4）：
 //   第一幕细化为站级 s1/s2/s3（数字 1→2→3 滚动、节点逐个点亮，prevDone 驱动
 //   已完成态）；第二/三幕保持幕级（骨架，act2 → 节点 4、act3 → 节点 6，不动）。
@@ -30,16 +33,15 @@ import gsap from 'gsap'
 // （第一幕三站同属 act1 —— 幕色微染不变，站间不换色，保持「幕」的色块感，简报 §6.4）。
 // 站名锚定 PLAN.md §2.2 三幕八站措辞；随幕微染由 data-act（CSS 侧 --hud-accent）驱动
 const STOPS = [
-  { seg: 's1', nodes: [1], prevDone: 0, act: 'act1', short: '命令命中', next: '扫盘' },
-  { seg: 's2', nodes: [2], prevDone: 1, act: 'act1', short: '扫盘', next: '缓存分流' },
-  { seg: 's3', nodes: [3], prevDone: 2, act: 'act1', short: '缓存分流', next: '第二幕 · 理解' },
-  { seg: 'act2', nodes: [4, 5], prevDone: 3, act: 'act2', short: '第二幕 · 理解', next: '第三幕 · 生成' },
-  { seg: 'act3', nodes: [6, 7, 8], prevDone: 5, act: 'act3', short: '第三幕 · 生成', next: null },
+  { seg: 's1', nodes: [1], prevDone: 0, act: 'act1', short: '命令命中' },
+  { seg: 's2', nodes: [2], prevDone: 1, act: 'act1', short: '扫盘' },
+  { seg: 's3', nodes: [3], prevDone: 2, act: 'act1', short: '缓存分流' },
+  { seg: 'act2', nodes: [4, 5], prevDone: 3, act: 'act2', short: ACT_TITLES.act2 },
+  { seg: 'act3', nodes: [6, 7, 8], prevDone: 5, act: 'act3', short: ACT_TITLES.act3 },
 ]
 // gate → 夹住它的两段（正向入口 / 出口）：gate 标题按穿越方向显示
 // （正向"第二幕 → 第三幕"，反向"第三幕 → 第二幕"）——
-// 原实现恒用 prev.next 拼接，反向穿越时显示错误方向（act2 侧反穿显示
-// "第二幕 → 第三幕"）甚至 "→ null"（act3 侧反穿 prev.next=null，2026-08-05 实测）
+// 方向感知取代原 prev.next 拼接（反穿显示错误方向甚至 "→ null"，2026-08-05 实测）
 const GATE_DIR = {
   g1: ['s1', 's2'], // 幕内轻量 gate（同幕色，简报 §6.1）
   g2: ['s2', 's3'],
@@ -94,7 +96,6 @@ export function createHud({ uiEl, onSelect = null } = {}) {
   // tooltip 边缘修正：首尾节点居中 tooltip 会溢出屏幕，向内侧平移
   nodeEls[0]?.style.setProperty('--shift', '30px')
   nodeEls[nodeEls.length - 1]?.style.setProperty('--shift', '-30px')
-  let current = STOPS[0] // 当前幕（默认第一幕）
   let numTween = null // 数字滚动补间（dispose 时释放）
 
   // 数字滚动：当前站号从旧值滚到新值（act1→act2：1 → 4）。
@@ -172,7 +173,6 @@ export function createHud({ uiEl, onSelect = null } = {}) {
         // （data-act 驱动 CSS 侧 --hud-accent，见 style.css；hex 直接 setProperty
         // 是不透明色，光晕过浓，2026-08-05 弃用）
         root.classList.remove('is-gating')
-        current = stop
         // data-act 用 stop.act（站级）而非 seg：第一幕三站同属 act1，
         // 微染不换色（简报 §6.4 幕的色块感）
         root.dataset.act = stop.act

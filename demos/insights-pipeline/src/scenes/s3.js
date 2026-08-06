@@ -4,11 +4,11 @@
 // 未变的盒不发光（暗盒）——「有的亮有的哑」的对比语法（简报 §4.3 / §7.2-7）。
 //
 // 契约（与 s1.js 同构，main.js 站级装配）：
-//   createS3({ scene, camera, uiEl, river = null }) → { enter, scrub, update, dispose }
+//   createS3({ scene, camera, uiEl, river }) → { enter, scrub, dispose }
 //     scene/camera/uiEl   三站共享的 3D 层与 DOM 层（由 main.js 装配，本站不建渲染器；
 //                         渲染由 main.js 的 onScrollFrame 统一执行）
-//     river               共享光河实例（简报 §6.1：main.js 在 s1 enter 时 createRiver、
-//                         离开 S3 时 dispose —— 本站只用不建不毁；缺省时兜底自建并自持）
+//     river               共享光河实例（必传；main.js 引擎级创建、backToPrologue 销毁，
+//                         本站只用不建不毁，推进由 main.js 统一执行）
 //
 // 节拍（简报 §4.3 三拍，由「首帧 scrub」触发 —— gate 预挂期间不 scrub、不播，
 // 观众真正看到本站时才入场；reduced-motion 直接落定，简报 §5）：
@@ -46,11 +46,13 @@
 
 import * as THREE from 'three'
 import gsap from 'gsap'
-import { createRiver, RIVER } from '../river.js'
+import { RIVER } from '../river.js'
 import { STATS } from '../data/sessions.js'
+import { COLORS } from '../theme.js'
+import { easeInOutQuad, clamp01, scrubFade, rampCamera, isReducedMotion } from '../utils.js'
 
 // ---------- 场景常量（简报 §2.3 / §4.3） ----------
-const META_C = 0x7dd3fc // meta 青（与 theme.COLORS.mono 同值）
+const META_C = COLORS.mono // meta 青（theme.js 单一来源）
 const EDGE_FACET = 0x7a5a68 // facet 细边暗粉灰（0.5px 视觉近似；原纯灰 0x66707e
 // 在暗背景上完全消失,略带品红倾向让「哑盒属于 facet 支」可读,grok 复核,2026-08-05）
 const EDGE_FLASH = 0xdfe9f5 // facet 确认闪青白（80ms，简报 §4.3「收到碰触闪一下」；
@@ -74,16 +76,10 @@ const CAM_END = new THREE.Vector3(0, 3, 2)
 const LOOK_ENTER = new THREE.Vector3(0, 0.4, -8)
 const LOOK_END = new THREE.Vector3(0, 0.5, -13)
 
-const easeInOutQuad = (x) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2)
-const clamp01 = (v) => Math.min(1, Math.max(0, v))
-
-export function createS3({ scene, camera, uiEl, river = null } = {}) {
+// river 为必传参数（main.js 引擎级创建共享河，本站只用不建不毁）
+export function createS3({ scene, camera, uiEl, river }) {
   let disposed = false
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-  // ---------- 光河（简报 §6.1：共享实例，只用不建不毁；缺省兜底自建并自持） ----------
-  const ownRiver = !river
-  const rv = river ?? createRiver({ scene })
+  const reducedMotion = isReducedMotion()
 
   // ---------- 缓存盒位置（与 shader 内路径采样同源，river.js RIVER 对象） ----------
   const metaPos = RIVER.getBranchEnd('meta') // (2.7, 0.2, -23)
@@ -189,10 +185,10 @@ export function createS3({ scene, camera, uiEl, river = null } = {}) {
   const synEl = copy.querySelector('.s3-syn')
 
   // 拍1 汇聚（进入即设；共享河在黑场期已完成变宽，观众见到时已是最宽）：简报 §4.3
-  rv.setInfoVolume(STATS.totalInfo)
-  rv.setFlow('s3')
+  river.setInfoVolume(STATS.totalInfo)
+  river.setFlow('s3')
   // 河段窗口复位全河（画卷站界：S1 [0,0.35] / S2 [0.35,1] / S3 全河）
-  rv.setVisibleRange(0, 1)
+  river.setVisibleRange(0, 1)
 
   // ---------- 节拍（简报 §4.3 三拍；首帧 scrub 触发，避开 gate 预挂黑场期，决策记录 7） ----------
   let beats = null
@@ -201,12 +197,12 @@ export function createS3({ scene, camera, uiEl, river = null } = {}) {
   function runBeats() {
     if (reducedMotion) {
       // 节拍直接呈现（简报 §5）：全部状态落定
-      rv.setBranchMix(1)
-      rv.setAbsorbers(metaPos, facetPos, ABSORB_R, true)
-      rv.setFlow('s3split')
+      river.setBranchMix(1)
+      river.setAbsorbers(metaPos, facetPos, ABSORB_R, true)
+      river.setFlow('s3split')
       setMetaIntensity(1)
       setFacetFlash(0)
-      rv.setInfoVolume(STATS.metaInfo + STATS.facetInfo * 0.7)
+      river.setInfoVolume(STATS.metaInfo + STATS.facetInfo * 0.7)
       labelMeta.style.opacity = '1'
       labelFacet.style.opacity = '1'
       return
@@ -224,26 +220,26 @@ export function createS3({ scene, camera, uiEl, river = null } = {}) {
       // 拍1 汇聚：信息量全量（第一幕最宽）短暂停留，让观众看见最宽段
       .to({}, { duration: 0.45 })
       // 拍2 分流：叉口火花 + 双色分叉 morph（0.5s,简报 §4.3 0.45~0.65s 缓动 ≈ 三次幂）
-      .call(() => rv.pulseAt(1.0, 0.8)) // pathT 1.0 = 主干末点 = 叉口
+      .call(() => river.pulseAt(1.0, 0.8)) // pathT 1.0 = 主干末点 = 叉口
       // power3.inOut = gsap 三次幂缓动(easeInOutCubic 的 gsap 等价名;
       // 原 'easeInOutCubic' 非 gsap 内置名,时间线可能在此补间后停走,
       // 入盒节拍(absorbOn)从未触发 —— 2026-08-05 实测定位)
-      .to(mix, { v: 1, duration: 0.5, ease: 'power3.inOut', onUpdate: () => rv.setBranchMix(mix.v) }, '<')
+      .to(mix, { v: 1, duration: 0.5, ease: 'power3.inOut', onUpdate: () => river.setBranchMix(mix.v) }, '<')
       // 拍3 入盒：吸收开 + 减速入盒；meta 亮 / facet 闪灰（与吸收同刻）。
       // 用空对象补间 + onStart 触发(原 .call 回调在时间线走完后从未执行,
       // absorbOn 恒 0 —— 2026-08-05 实测定位;onStart 锚定补间起点,调度可靠)
       .to({}, {
         duration: 0.2,
         onStart: () => {
-          rv.setAbsorbers(metaPos, facetPos, ABSORB_R, true)
-          rv.setFlow('s3split')
+          river.setAbsorbers(metaPos, facetPos, ABSORB_R, true)
+          river.setFlow('s3split')
         },
       })
       .add(flashSeq, '<')
       .to(mi, { v: 1, duration: 0.55, ease: 'power2.out', onUpdate: () => setMetaIntensity(mi.v) }, '<')
       .to([labelMeta, labelFacet], { opacity: 1, duration: 0.3 }, '<')
       // 结算：两支河退潮变细（简报 §4.3；公式按任务给定，决策记录 5）
-      .to({}, { duration: 0.3, onStart: () => rv.setInfoVolume(STATS.metaInfo + STATS.facetInfo * 0.7) })
+      .to({}, { duration: 0.3, onStart: () => river.setInfoVolume(STATS.metaInfo + STATS.facetInfo * 0.7) })
   }
 
   // ---------- 标签投影（3D 盒顶 → 屏幕坐标，每帧刷新） ----------
@@ -268,12 +264,15 @@ export function createS3({ scene, camera, uiEl, river = null } = {}) {
   }
 
   // ---------- 对外契约（对齐 MasterTimeline segment 生命周期） ----------
-  const _look = new THREE.Vector3()
+  // resize：标签投影依赖视口尺寸（相机移动由 scrub 重算）
+  const onResize = () => projectLabels()
+  let lastP = -1 // scrub p 判等（滚动静止时跳过重复写入；投影随相机静止免跑）
   return {
     enter() {
       // 相机定位（共享相机；S1 的初始位不属于本站，简报 §4.3 enter 定位）
       camera.position.copy(CAM_ENTER)
       camera.lookAt(LOOK_ENTER)
+      window.addEventListener('resize', onResize)
     },
     scrub(p) {
       // 首帧 scrub = 本站成为当前视觉段（gate 预挂期间不 scrub）→ 入场节拍开播
@@ -281,29 +280,23 @@ export function createS3({ scene, camera, uiEl, river = null } = {}) {
         started = true
         runBeats()
       }
+      if (p === lastP) return
+      lastP = p
       // 文案浮现（滚动 0.2~0.75，简报 §4 站内滚动编排：大字 → 小字 → 合成标注）
-      const fade = (a, b) => clamp01((p - a) / (b - a))
-      const leadK = fade(0.2, 0.32)
-      leadEl.style.opacity = String(leadK)
-      leadEl.style.transform = `translateY(${(1 - leadK) * 14}px)`
-      bodyPs[0].style.opacity = String(fade(0.3, 0.45))
-      bodyPs[1].style.opacity = String(fade(0.45, 0.6))
-      synEl.style.opacity = String(fade(0.65, 0.75))
+      scrubFade(leadEl, p, 0.2, 0.32)
+      scrubFade(bodyPs[0], p, 0.3, 0.45, 0)
+      scrubFade(bodyPs[1], p, 0.45, 0.6, 0)
+      scrubFade(synEl, p, 0.65, 0.75, 0)
       // 相机：单调推进看叉口与两盒（简报 §5「相机少犹豫」，不回摆）
-      const k = easeInOutQuad(clamp01(p))
-      camera.position.lerpVectors(CAM_ENTER, CAM_END, k)
-      camera.lookAt(_look.copy(LOOK_ENTER).lerp(LOOK_END, k))
-    },
-    update(t, dt) {
-      rv.update(t, dt) // 光河推进（渲染由 main.js 的 onScrollFrame 统一执行）
-      projectLabels()
+      rampCamera(camera, CAM_ENTER, LOOK_ENTER, CAM_END, LOOK_END, easeInOutQuad(p))
+      projectLabels() // 相机动了 → 标签投影重算（原在 update 每帧空转，现随相机移动执行）
     },
     dispose() {
       if (disposed) return
       disposed = true
       beats?.kill()
       gsap.killTweensOf([labelMeta, labelFacet]) // 兜底：label 补间若脱离 beats 也一并清
-      if (ownRiver) rv.dispose() // 兜底自建的河自持销毁；共享河归 main.js 管
+      window.removeEventListener('resize', onResize)
       scene.remove(metaFill, metaEdge, metaHalo, facetFill, facetEdge)
       boxGeo.dispose()
       edgeGeo.dispose()

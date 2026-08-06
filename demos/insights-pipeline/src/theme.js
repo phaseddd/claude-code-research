@@ -9,12 +9,6 @@ export const COLORS = {
   act3: '#f5b942', // 第三幕 · 琥珀（报告成形；与尾声白场保持区分度）
   text: '#e8ecf4',
   textDim: 'rgba(232, 236, 244, 0.55)',
-  mono: '#7dd3fc', // 等宽数据色
+  mono: '#7dd3fc', // 等宽数据色（s3 缓存盒青引用）
   hold: '#7dd3fc', // 按住按钮进度环
-}
-
-export const FONTS = {
-  display: "'Playfair Display', 'Times New Roman', serif", // 西文命令图形（对应 PLAN 主标题字体决策）
-  body: "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
-  mono: "'JetBrains Mono', ui-monospace, Consolas, monospace",
 }

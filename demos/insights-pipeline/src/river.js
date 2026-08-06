@@ -20,12 +20,15 @@
 //   预分配固定全量、不用 drawRange:第一幕粒子数恒定(简报可微调条款,无动态增减需求)
 
 import * as THREE from 'three'
+import { makeSoftTexture, SOFT_POINT_FRAG, isReducedMotion } from './utils.js'
 
 // ---------- 河色(简报 §2.3 river 色阶) ----------
+// 导出供场景模块引用（s2 星云转化目标色 / s1 源头 ember 白）——
+// 消除「注释自认引用、实则复制旧值」的漂移（2026-08-05 已漂移一次）
 // 2026-08-05 参数微调(简报可调条款,注释理由):body/deep 从冷蓝转冷青 ——
 // 粒子河是整屏记忆色,背景已转青相(G≥B)后河仍 210° 蓝 → 观感「蓝色数据流/国企大屏」;
 // 转 ~188° teal 后与背景雾(175°)同族、meta 支(190° 白青)过渡自然,S3 双色验收不受影响
-const COL = {
+export const COL = {
   ember: new THREE.Color('#E6FAF7'), // 源头点亮瞬间 HDR 峰(冷白微青)
   core: new THREE.Color('#B5EEEA'), // L0 芯核(偏白青,定义脊线)
   body: new THREE.Color('#3FB4CC'), // L1 主体(稳定冷青,原冷蓝 #4AA8FF)
@@ -82,15 +85,9 @@ export const RIVER = {
     this._main.points[0].copy(pos)
     this._main.updateArcLengths()
   },
-  getSource() {
-    return this._main.getPoint(0)
-  },
   getMidPoint() {
     return this._main.getPoint(0.5)
   }, // S2 星云中心
-  getForkPoint() {
-    return this._main.getPoint(1)
-  }, // S3 叉口
   getBranchEnd(branch) {
     return (branch === 'meta' ? this._meta : this._facet).getPoint(1)
   }, // 缓存盒位置
@@ -110,8 +107,6 @@ const LAYERS = [
 ]
 const TOTAL = LAYERS.reduce((a, l) => a + l.count, 0) // 10000
 const GAUSS_SIGMA = 0.33 // 高斯截面 σ:±3σ≈1(简报 §3.1「offset = gauss() × 半宽」)
-const EDGE_DIM = 0.35 // 边缘粒子更小更暗系数(简报 §3.1:矩形填充=程序感,高斯=流体感)
-const EDGE_SLOW = 0.25 // 边缘粒子更慢:流速衰减系数(简报 §3.1「边缘粒子更慢更暗」)
 
 // 流速(t/s):沿路径参数每秒增量。视野内河段 ≈0.3t,除以流速 = 过视野秒数
 //   vS1 0.10(点亮后加速「唰」)/ vS2 0.07(从星云抽出略慢显「拽」)/ vS3 0.085(主段)
@@ -169,8 +164,7 @@ const VERT = /* glsl */ `
   varying float vAlpha;
   varying vec3  vColor;
 
-  // 边缘粒子更小更暗 / 更慢系数(与 JS 侧 GAUSS_SIGMA 配套;GLSL 常量须在
-  // shader 内声明,JS 侧常量不会自动进入 —— 2026-08-05 编译失败修复)
+  // 边缘粒子更小更暗 / 更慢系数(GLSL 常量自持,须在 shader 内声明)
   const float EDGE_DIM = 0.35;
   const float EDGE_SLOW = 0.25;
 
@@ -300,45 +294,6 @@ const VERT = /* glsl */ `
   }
 `
 
-const FRAG = /* glsl */ `
-  uniform sampler2D uMap;
-  varying float vAlpha;
-  varying vec3 vColor;
-
-  void main() {
-    vec4 tex = texture2D(uMap, gl_PointCoord);
-    gl_FragColor = vec4(vColor, vAlpha) * tex;
-  }
-`
-
-// ---------- 粒子纹理:64² 径向软斑 + smoothstep 外圈(禁止硬圆点,简报 §3.1) ----------
-// 中心 alpha 1.0、半径 40% 内保持高亮、外 60% 指数衰减
-function makeSoftTexture() {
-  const size = 64
-  const data = new Uint8Array(size * size * 4)
-  const r = size / 2
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = x + 0.5 - r
-      const dy = y + 0.5 - r
-      const d = Math.sqrt(dx * dx + dy * dy) / r
-      const i = (y * size + x) * 4
-      let a
-      if (d <= 0.4) a = 1.0 // 核心 40%:高亮保持
-      else {
-        const k = (d - 0.4) / 0.6
-        a = Math.pow(1 - k, 2.2) // 外 60%:指数衰减
-      }
-      a = a * a * (3 - 2 * a) // smoothstep 平滑外圈
-      data[i] = data[i + 1] = data[i + 2] = 255
-      data[i + 3] = Math.round(a * 255)
-    }
-  }
-  const tex = new THREE.DataTexture(data, size, size)
-  tex.needsUpdate = true
-  return tex
-}
-
 // ---------- 粒子生成 ----------
 function gaussRandom() {
   // Box-Muller(CPU 一次性生成 1e4 个,开销可忽略)
@@ -350,7 +305,7 @@ function gaussRandom() {
 }
 
 export function createRiver({ scene, branchShare = 0.73 } = {}) {
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const reducedMotion = isReducedMotion()
 
   // ---------- 粒子 buffer:预分配全量(层分区生成) ----------
   const n = TOTAL
@@ -447,7 +402,7 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
   const mat = new THREE.ShaderMaterial({
     uniforms,
     vertexShader: VERT,
-    fragmentShader: FRAG,
+    fragmentShader: SOFT_POINT_FRAG,
     transparent: true,
     depthWrite: false,
     // 发光粒子标准组合(简报 §3.1:AdditiveBlending + depthWrite false);

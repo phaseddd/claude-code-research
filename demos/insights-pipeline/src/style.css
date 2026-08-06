@@ -26,6 +26,14 @@
   --act1-fog: rgba(59, 108, 246, 0.16);
   --act2-fog: rgba(139, 92, 246, 0.07);
 
+  /* mono 的 RGB 分量:半透明变体统一写 rgb(var(--mono-rgb) / α)（原 rgba(125,211,252,…) 硬编码 62 处） */
+  --mono-rgb: 125 211 252;
+
+  /* 字体栈变量（原三组栈全文重复 21 处；改字体只动这里） */
+  --font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-serif: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+
   /* 颗粒纹理:环境层(3.5%)与序章老电影层(9%)共用同一份 SVG data-uri */
   --grain-uri: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
   --grain-ambient: 0.035;
@@ -71,7 +79,7 @@ body {
     linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 48%, var(--bg-deep) 100%);
   color: var(--text);
   overflow: hidden; /* 滚动完全由 JS 接管（参照零站点） */
-  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -164,9 +172,9 @@ body:has(.hud[data-act='act3']) {
   background:
     radial-gradient(1.5px 1.5px at 18% 26%, rgba(255, 255, 255, 0.5), transparent 2px),
     radial-gradient(1.5px 1.5px at 72% 64%, rgba(255, 255, 255, 0.32), transparent 2px),
-    radial-gradient(1px 1px at 84% 22%, rgba(125, 211, 252, 0.6), transparent 1.5px),
+    radial-gradient(1px 1px at 84% 22%, rgb(var(--mono-rgb) / 0.6), transparent 1.5px),
     radial-gradient(1px 1px at 30% 74%, rgba(255, 255, 255, 0.28), transparent 1.5px),
-    radial-gradient(1.5px 1.5px at 55% 12%, rgba(125, 211, 252, 0.45), transparent 2px),
+    radial-gradient(1.5px 1.5px at 55% 12%, rgb(var(--mono-rgb) / 0.45), transparent 2px),
     radial-gradient(ellipse 62% 52% at 50% 40%, var(--act1-fog), transparent 72%),
     radial-gradient(ellipse 34% 24% at 80% 16%, var(--act2-fog), transparent 70%);
   transition: transform 0.3s cubic-bezier(0.2, 0.6, 0.3, 1); /* 视差平滑跟随 */
@@ -233,14 +241,14 @@ body:has(.hud[data-act='act3']) {
   color: transparent;
   /* 双层光晕：近层锐光界定字形 + 远层蓝紫弥散营造"字在发光场里"的体积感，
      避免单一 drop-shadow 的贴纸描边感 */
-  filter: drop-shadow(0 0 18px rgba(125, 211, 252, 0.45))
+  filter: drop-shadow(0 0 18px rgb(var(--mono-rgb) / 0.45))
     drop-shadow(0 0 110px rgba(59, 108, 246, 0.36));
 }
 
 /* 行2：中文副题 —— 思源宋体 Heavy（报告/档案感，呼应"生成 HTML 报告"母题） */
 .title-cn {
   display: block;
-  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-family: var(--font-serif);
   font-weight: 900;
   font-size: clamp(1.3rem, 3vw, 2.4rem);
   line-height: 1.2;
@@ -267,12 +275,12 @@ body:has(.hud[data-act='act3']) {
 .title-cn .prologue-char {
   background: none;
   color: var(--text);
-  text-shadow: 0 0 24px rgba(125, 211, 252, 0.18);
+  text-shadow: 0 0 24px rgb(var(--mono-rgb) / 0.18);
 }
 
 .title-display .hl {
   /* 命令名高亮：附额外青色光晕 */
-  filter: drop-shadow(0 0 16px rgba(125, 211, 252, 0.55));
+  filter: drop-shadow(0 0 16px rgb(var(--mono-rgb) / 0.55));
 }
 
 .prologue-body {
@@ -309,16 +317,16 @@ body:has(.hud[data-act='act3']) {
   font-size: 1.2rem; /* 比环节文字大一档：青箭头是小字号下易被误读为灰白的元凶，放大 + 加粗 */
   font-weight: 700;
   margin: 0 0.45em;
-  text-shadow: 0 0 14px rgba(125, 211, 252, 0.85);
+  text-shadow: 0 0 14px rgb(var(--mono-rgb) / 0.85);
 }
 
 /* 点题句：思源宋体 900（全篇主题最重强调，与标题副题字阶呼应） */
 .body-theme {
-  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-family: var(--font-serif);
   font-weight: 900;
   font-size: 1.45rem;
   color: var(--text);
-  text-shadow: 0 0 26px rgba(125, 211, 252, 0.3);
+  text-shadow: 0 0 26px rgb(var(--mono-rgb) / 0.3);
 }
 
 /* 正文行距紧凑（诗句式短行排版，段距让位于行距） */
@@ -334,11 +342,11 @@ body:has(.hud[data-act='act3']) {
   margin: 0.4em auto 0.5em;
   padding: 0.5em 1.1em;
   text-align: left;
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
   line-height: 1.8;
   color: var(--text-dim);
-  border: 1px solid rgba(125, 211, 252, 0.22);
+  border: 1px solid rgb(var(--mono-rgb) / 0.22);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
   box-shadow: inset 0 0 24px rgba(59, 108, 246, 0.1);
@@ -354,14 +362,15 @@ body:has(.hud[data-act='act3']) {
 
 .prologue-chat .chat-file {
   color: var(--mono);
-  text-shadow: 0 0 12px rgba(125, 211, 252, 0.4);
+  text-shadow: 0 0 12px rgb(var(--mono-rgb) / 0.4);
 }
 
 .prologue-source {
   margin-top: 0.5vh;
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--text-dim);
+  letter-spacing: 0.04em;
 }
 
 .prologue-link {
@@ -416,13 +425,13 @@ body:has(.hud[data-act='act3']) {
 /* 底环：常驻可见的引导环（呼吸脉动提示"这里可以按"），按下前就有轮廓 */
 .hold-ring-base {
   fill: none;
-  stroke: rgba(125, 211, 252, 0.28);
+  stroke: rgb(var(--mono-rgb) / 0.28);
   stroke-width: 3;
   animation: hold-breathe 2.4s ease-in-out infinite;
 }
 
 .hold-hit:hover .hold-ring-base {
-  stroke: rgba(125, 211, 252, 0.5);
+  stroke: rgb(var(--mono-rgb) / 0.5);
 }
 
 @keyframes hold-breathe {
@@ -444,20 +453,21 @@ body:has(.hud[data-act='act3']) {
   stroke-dasharray: 289.03; /* 2π × 46 */
   stroke-dashoffset: 289.03;
   transition: stroke-dashoffset 0.05s linear;
-  filter: drop-shadow(0 0 6px rgba(125, 211, 252, 0.7));
+  filter: drop-shadow(0 0 6px rgb(var(--mono-rgb) / 0.7));
 }
 
 /* 环心符号：斜杠命令感，发光提示可交互 */
 .hold-core {
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-weight: 700;
   font-size: 2.1rem;
   line-height: 1;
   color: var(--mono);
-  text-shadow: 0 0 18px rgba(125, 211, 252, 0.7);
+  text-shadow: 0 0 18px rgb(var(--mono-rgb) / 0.7);
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
+  transition: transform 0.15s ease; /* 按压放大平滑（is-dragging 时） */
 }
 
 .hold-label {
@@ -465,7 +475,7 @@ body:has(.hud[data-act='act3']) {
   font-size: 1.05rem;
   letter-spacing: 0.08em;
   color: var(--text);
-  text-shadow: 0 0 20px rgba(125, 211, 252, 0.25);
+  text-shadow: 0 0 20px rgb(var(--mono-rgb) / 0.25);
 }
 
 .hold-hint {
@@ -476,20 +486,12 @@ body:has(.hud[data-act='act3']) {
 /* 按住反馈：环心符号放大 + 底环提亮（按压即反馈，参照零站点按压变色手法） */
 .prologue-hold.is-dragging .hold-core {
   transform: scale(1.18);
-  text-shadow: 0 0 26px rgba(125, 211, 252, 0.9);
+  text-shadow: 0 0 26px rgb(var(--mono-rgb) / 0.9);
 }
 
 .prologue-hold.is-dragging .hold-ring-base {
-  stroke: rgba(125, 211, 252, 0.55);
+  stroke: rgb(var(--mono-rgb) / 0.55);
   animation: none;
-}
-
-.hold-core {
-  transition: transform 0.15s ease;
-}
-
-.prologue-source {
-  letter-spacing: 0.04em;
 }
 
 /* 尊重动效偏好：关闭呼吸/颗粒跳帧动画（可访问性；颗粒降为静态） */
@@ -528,7 +530,7 @@ body:has(.hud[data-act='act3']) {
   font-weight: 900;
   font-size: clamp(1.8rem, 5vw, 3.4rem);
   letter-spacing: 0.06em;
-  text-shadow: 0 0 30px rgba(125, 211, 252, 0.25);
+  text-shadow: 0 0 30px rgb(var(--mono-rgb) / 0.25);
 }
 
 .act-sub {
@@ -541,7 +543,7 @@ body:has(.hud[data-act='act3']) {
 .act-scroll {
   position: absolute;
   bottom: 4vh;
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
   letter-spacing: 0.2em;
   color: var(--text-dim);
@@ -558,33 +560,11 @@ body:has(.hud[data-act='act3']) {
   }
 }
 
-.act-restart {
-  position: absolute;
-  top: 3vh;
-  right: 3vw;
-  pointer-events: auto;
-  padding: 0.45em 1.2em;
-  border: 1px solid rgba(125, 211, 252, 0.35);
-  border-radius: 2em;
-  background: rgba(125, 211, 252, 0.06);
-  color: var(--mono);
-  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: 0.85rem;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.act-restart:hover {
-  background: rgba(125, 211, 252, 0.16);
-  border-color: rgba(125, 211, 252, 0.65);
-}
-
 /* ---------- 降级模式（无 WebGL2） ---------- */
 
 .degraded-note {
   margin-top: 3vh;
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--act3);
 }
@@ -617,7 +597,7 @@ body:has(.hud[data-act='act3']) {
    rgba（JS 此前 setProperty 写 hex 不透明值 → 光晕过浓且未达预期，2026-08-05
    grok 复验"微染基本没有"；改为 CSS 侧三幕色 + 底部 accent 细线） */
 .hud {
-  --hud-accent: rgba(125, 211, 252, 0.5); /* 默认第一幕：青 */
+  --hud-accent: rgb(var(--mono-rgb) / 0.5); /* 默认第一幕：青 */
   --hud-tint: #e8ecf4; /* 标题/数字文字色微染（act1 默认白） */
 }
 .hud[data-act='act2'] {
@@ -662,7 +642,7 @@ body:has(.hud[data-act='act3']) {
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--hud-tint, var(--text));
-  text-shadow: 0 0 16px var(--hud-accent, rgba(125, 211, 252, 0.3));
+  text-shadow: 0 0 16px var(--hud-accent, rgb(var(--mono-rgb) / 0.3));
   white-space: nowrap;
 }
 
@@ -690,7 +670,7 @@ body:has(.hud[data-act='act3']) {
   top: 50%;
   height: 3px; /* 2px 在整屏/视频里过细（grok 复验），加粗到 3px */
   transform: translateY(-50%);
-  background: rgba(125, 211, 252, 0.13);
+  background: rgb(var(--mono-rgb) / 0.13);
   border-radius: 1.5px;
 }
 
@@ -700,8 +680,8 @@ body:has(.hud[data-act='act3']) {
   position: absolute;
   inset: 0;
   width: 0%; /* JS 按当前幕起点节点更新 */
-  background: linear-gradient(90deg, rgba(125, 211, 252, 0.9), var(--hud-accent, rgba(125, 211, 252, 0.3)));
-  box-shadow: 0 0 10px rgba(125, 211, 252, 0.5);
+  background: linear-gradient(90deg, rgb(var(--mono-rgb) / 0.9), var(--hud-accent, rgb(var(--mono-rgb) / 0.3)));
+  box-shadow: 0 0 10px rgb(var(--mono-rgb) / 0.5);
   border-radius: 1px;
   transition: width 0.6s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
@@ -721,14 +701,14 @@ body:has(.hud[data-act='act3']) {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(125, 211, 252, 0.55) 25%,
-    rgba(125, 211, 252, 0.95) 40%,
+    rgb(var(--mono-rgb) / 0.55) 25%,
+    rgb(var(--mono-rgb) / 0.95) 40%,
     #ffffff 50%,
-    rgba(125, 211, 252, 0.95) 60%,
-    rgba(125, 211, 252, 0.55) 75%,
+    rgb(var(--mono-rgb) / 0.95) 60%,
+    rgb(var(--mono-rgb) / 0.55) 75%,
     transparent 100%
   );
-  filter: drop-shadow(0 0 14px rgba(125, 211, 252, 1));
+  filter: drop-shadow(0 0 14px rgb(var(--mono-rgb) / 1));
   opacity: 0;
 }
 
@@ -760,7 +740,7 @@ body:has(.hud[data-act='act3']) {
   border: 1px solid rgba(232, 236, 244, 0.22);
   background: rgba(5, 7, 13, 0.72);
   color: rgba(232, 236, 244, 0.38);
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8rem;
   font-weight: 700;
   line-height: 1;
@@ -773,18 +753,18 @@ body:has(.hud[data-act='act3']) {
 
 /* 已完成幕：青色实心 + 辉光（数据已流过） */
 .hud-node.is-done {
-  border-color: rgba(125, 211, 252, 0.75);
-  background: rgba(125, 211, 252, 0.92);
+  border-color: rgb(var(--mono-rgb) / 0.75);
+  background: rgb(var(--mono-rgb) / 0.92);
   color: #05070d;
-  box-shadow: 0 0 12px rgba(125, 211, 252, 0.4);
+  box-shadow: 0 0 12px rgb(var(--mono-rgb) / 0.4);
 }
 
 /* 当前幕其余节点：半亮（幕内即将展开）。边框随幕微染（--hud-accent）——
    青色 = 已完成的流水线数据，幕色 = 正在发生的幕 */
 .hud-node.is-in {
-  border-color: var(--hud-accent, rgba(125, 211, 252, 0.5));
+  border-color: var(--hud-accent, rgb(var(--mono-rgb) / 0.5));
   color: rgba(232, 236, 244, 0.85);
-  box-shadow: inset 0 0 8px var(--hud-accent, rgba(125, 211, 252, 0.2));
+  box-shadow: inset 0 0 8px var(--hud-accent, rgb(var(--mono-rgb) / 0.2));
 }
 
 /* 当前幕起点：白亮 + 呼吸脉冲（正在发生）。光晕双层 = 幕色 + 白（grok 复验
@@ -792,7 +772,7 @@ body:has(.hud[data-act='act3']) {
 .hud-node.is-cur {
   border-color: #ffffff;
   color: #ffffff;
-  background: rgba(125, 211, 252, 0.16);
+  background: rgb(var(--mono-rgb) / 0.16);
   animation: hud-pulse 1.6s ease-in-out infinite;
 }
 
@@ -800,12 +780,12 @@ body:has(.hud[data-act='act3']) {
   0%,
   100% {
     transform: scale(1.18);
-    box-shadow: 0 0 14px var(--hud-accent, rgba(125, 211, 252, 0.5)),
+    box-shadow: 0 0 14px var(--hud-accent, rgb(var(--mono-rgb) / 0.5)),
       0 0 24px rgba(255, 255, 255, 0.22);
   }
   50% {
     transform: scale(1.34);
-    box-shadow: 0 0 34px var(--hud-accent, rgba(125, 211, 252, 0.95)),
+    box-shadow: 0 0 34px var(--hud-accent, rgb(var(--mono-rgb) / 0.95)),
       0 0 52px rgba(255, 255, 255, 0.3);
   }
 }
@@ -813,8 +793,8 @@ body:has(.hud[data-act='act3']) {
 .hud-node:hover {
   border-color: var(--mono);
   color: var(--mono);
-  background: rgba(125, 211, 252, 0.1);
-  box-shadow: 0 0 16px rgba(125, 211, 252, 0.45);
+  background: rgb(var(--mono-rgb) / 0.1);
+  box-shadow: 0 0 16px rgb(var(--mono-rgb) / 0.45);
   transform: scale(1.1);
 }
 
@@ -833,10 +813,10 @@ body:has(.hud[data-act='act3']) {
   left: 50%;
   padding: 0.3em 0.7em;
   background: rgba(10, 14, 24, 0.94);
-  border: 1px solid rgba(125, 211, 252, 0.35);
+  border: 1px solid rgb(var(--mono-rgb) / 0.35);
   border-radius: 6px;
   color: var(--text);
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.7rem;
   font-weight: 400;
   letter-spacing: 0.04em;
@@ -844,7 +824,7 @@ body:has(.hud[data-act='act3']) {
   opacity: 0;
   pointer-events: none;
   transform: translateX(calc(-50% + var(--shift, 0px))) translateY(4px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55), 0 0 12px rgba(125, 211, 252, 0.12);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55), 0 0 12px rgb(var(--mono-rgb) / 0.12);
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
@@ -857,7 +837,7 @@ body:has(.hud[data-act='act3']) {
   width: 0;
   height: 0;
   border: 5px solid transparent;
-  border-top-color: rgba(125, 211, 252, 0.55);
+  border-top-color: rgb(var(--mono-rgb) / 0.55);
   opacity: 0;
   pointer-events: none;
   transform: translateX(var(--shift, 0px)) translateY(4px);
@@ -880,7 +860,7 @@ body:has(.hud[data-act='act3']) {
 /* 数字滚动计数器：当前站号 / 8（站间推进的即时反馈计量）。
    数字随幕色微染（--hud-accent） */
 .hud-counter {
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--text-dim);
   white-space: nowrap;
@@ -893,7 +873,7 @@ body:has(.hud[data-act='act3']) {
   color: var(--hud-tint, var(--mono)); /* 文字色随幕微染（同标题） */
   font-size: 1.2rem;
   font-weight: 700;
-  text-shadow: 0 0 12px var(--hud-accent, rgba(125, 211, 252, 0.6));
+  text-shadow: 0 0 12px var(--hud-accent, rgb(var(--mono-rgb) / 0.6));
 }
 
 /* 入场：节点逐个上浮浮现（--i 供 stagger），标题与计数同入 */
@@ -958,8 +938,10 @@ body:has(.hud[data-act='act3']) {
   z-index: 12; /* 3D 场景之上、HUD（30）之下 */
 }
 
-/* 字永远净（简报 §1.4-6）：星云推近后扫过文案区，柔暗衬底保文字锐利 */
-.s2-copy::before {
+/* 字永远净（简报 §1.4-6）：星云/河源头扫过文案区，柔暗衬底保文字锐利。
+   S1 与 S2 共用同一衬底（选择器合并，原两处逐字复制） */
+.s2-copy::before,
+.s1-copy::before {
   content: '';
   position: absolute;
   inset: -18px -36px;
@@ -969,12 +951,12 @@ body:has(.hud[data-act='act3']) {
 
 /* 大字核心句：思源宋体 Heavy 900（站标题字阶，简报 §2.4） */
 .s2-big {
-  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-family: var(--font-serif);
   font-weight: 900;
   font-size: clamp(1.35rem, 3.2vw, 2.1rem);
   line-height: 1.5;
   color: var(--text);
-  text-shadow: 0 0 22px rgba(125, 211, 252, 0.3);
+  text-shadow: 0 0 22px rgb(var(--mono-rgb) / 0.3);
 }
 
 /* 小字展开段：正文字阶，dim（信息放开但让位给场景） */
@@ -991,16 +973,16 @@ body:has(.hud[data-act='act3']) {
 
 /* 路径/命令名：等宽数据色（终端语言，简报 §2.2 字即图形） */
 .s2-code {
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
   color: var(--mono);
-  text-shadow: 0 0 10px rgba(125, 211, 252, 0.4);
+  text-shadow: 0 0 10px rgb(var(--mono-rgb) / 0.4);
 }
 
 /* 合成标注（措辞诚实，PLAN §2.4）：最小字阶等宽 */
 .s2-note {
   margin-top: 2vh;
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   letter-spacing: 0.03em;
   color: rgba(232, 236, 244, 0.5);
@@ -1029,7 +1011,7 @@ body:has(.hud[data-act='act3']) {
   letter-spacing: 0.02em;
   line-height: 1.45;
   color: var(--text);
-  text-shadow: 0 0 22px rgba(125, 211, 252, 0.28);
+  text-shadow: 0 0 22px rgb(var(--mono-rgb) / 0.28);
   opacity: 0; /* 浮现由 JS scrub 写入 */
 }
 
@@ -1050,10 +1032,10 @@ body:has(.hud[data-act='act3']) {
 /* 合成标注：等宽数据层小字（措辞诚实，PLAN §2.4；分流比来源同步标注） */
 .s3-syn {
   margin-top: 0.7em;
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.7rem;
   letter-spacing: 0.05em;
-  color: rgba(125, 211, 252, 0.55);
+  color: rgb(var(--mono-rgb) / 0.55);
   opacity: 0; /* 浮现由 JS scrub 写入 */
 }
 
@@ -1063,7 +1045,7 @@ body:has(.hud[data-act='act3']) {
   position: absolute;
   left: 0;
   top: 0;
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.08em;
   white-space: nowrap;
@@ -1073,16 +1055,10 @@ body:has(.hud[data-act='act3']) {
 }
 .s3-label-meta {
   color: var(--mono); /* 亮盒标签：青色微光（写更新） */
-  text-shadow: 0 0 8px rgba(125, 211, 252, 0.55);
+  text-shadow: 0 0 8px rgb(var(--mono-rgb) / 0.55);
 }
 .s3-label-facet {
   color: rgba(232, 236, 244, 0.45); /* 哑盒标签压暗（复用不发光） */
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .s3-label {
-    transition: none;
-  }
 }
 
 /* ---------- 第一幕场景（S1 命令命中，简报 §4 S1） ----------
@@ -1133,17 +1109,17 @@ body:has(.hud[data-act='act3']) {
 }
 
 .s1-term-title {
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.02em;
   color: rgba(232, 236, 244, 0.45);
 }
 
 .s1-restart {
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
-  color: rgba(125, 211, 252, 0.55);
+  color: rgb(var(--mono-rgb) / 0.55);
   background: none;
   border: none;
   padding: 2px 6px;
@@ -1154,7 +1130,7 @@ body:has(.hud[data-act='act3']) {
 
 .s1-restart:hover {
   color: var(--mono);
-  text-shadow: 0 0 10px rgba(125, 211, 252, 0.6);
+  text-shadow: 0 0 10px rgb(var(--mono-rgb) / 0.6);
 }
 
 .s1-restart:focus-visible {
@@ -1165,7 +1141,7 @@ body:has(.hud[data-act='act3']) {
 /* 主体：等宽 13.5px（简报 13~14px）、行高 1.6（简报 1.55~1.65）、内边距 16~18px（简报 16~20px） */
 .s1-term-body {
   padding: 16px 18px 18px;
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .s1-prompt {
@@ -1217,8 +1193,8 @@ body:has(.hud[data-act='act3']) {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: rgba(125, 211, 252, 0.85);
-  text-shadow: 0 0 12px rgba(125, 211, 252, 0.35);
+  color: rgb(var(--mono-rgb) / 0.85);
+  text-shadow: 0 0 12px rgb(var(--mono-rgb) / 0.35);
   opacity: 0; /* 由节拍浮现 */
 }
 
@@ -1247,7 +1223,7 @@ body:has(.hud[data-act='act3']) {
 
 /* —— hit —— 标记：落定 dim；闪 80ms 硬边沿由节拍 JS 驱动（简报 §4/§5） */
 .s1-row-hit {
-  color: rgba(125, 211, 252, 0.45);
+  color: rgb(var(--mono-rgb) / 0.45);
   opacity: 0.55;
 }
 
@@ -1275,8 +1251,8 @@ body:has(.hud[data-act='act3']) {
   position: relative;
   flex: 1;
   height: 10px;
-  background: rgba(125, 211, 252, 0.08);
-  border: 1px solid rgba(125, 211, 252, 0.18);
+  background: rgb(var(--mono-rgb) / 0.08);
+  border: 1px solid rgb(var(--mono-rgb) / 0.18);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -1288,8 +1264,8 @@ body:has(.hud[data-act='act3']) {
   top: 0;
   bottom: 0;
   width: 0%;
-  background: linear-gradient(90deg, rgba(74, 168, 255, 0.7), rgba(125, 211, 252, 0.95));
-  box-shadow: 0 0 10px rgba(125, 211, 252, 0.5);
+  background: linear-gradient(90deg, rgba(74, 168, 255, 0.7), rgb(var(--mono-rgb) / 0.95));
+  box-shadow: 0 0 10px rgb(var(--mono-rgb) / 0.5);
 }
 
 .s1-progress-pct {
@@ -1311,7 +1287,7 @@ body:has(.hud[data-act='act3']) {
   transform: translateY(-50%);
   border-radius: 50%;
   background: #7cf0ff;
-  box-shadow: 0 0 8px rgba(125, 211, 252, 0.9), 0 0 18px rgba(125, 211, 252, 0.5);
+  box-shadow: 0 0 8px rgb(var(--mono-rgb) / 0.9), 0 0 18px rgb(var(--mono-rgb) / 0.5);
   opacity: 0.7;
   pointer-events: none;
 }
@@ -1327,7 +1303,7 @@ body:has(.hud[data-act='act3']) {
   }
   50% {
     box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04),
-      0 0 24px rgba(125, 211, 252, 0.55), 0 0 0 1px rgba(125, 211, 252, 0.5);
+      0 0 24px rgb(var(--mono-rgb) / 0.55), 0 0 0 1px rgb(var(--mono-rgb) / 0.5);
   }
   100% {
     box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04);
@@ -1368,19 +1344,8 @@ body:has(.hud[data-act='act3']) {
 }
 
 /* 字永远净(简报 §1.4-6):河源头粒子团在面板下方,与文案区交叠 ——
-   柔暗衬底压暗粒子,文字锐利(与 .s2-copy::before 同手法,2026-08-05
-   主人实测「文案区盖住粒子」) */
-.s1-copy::before {
-  content: '';
-  position: absolute;
-  inset: -18px -36px;
-  z-index: -1;
-  background: radial-gradient(
-    ellipse 62% 56% at 50% 45%,
-    rgba(5, 7, 13, 0.55),
-    transparent 72%
-  );
-}
+   柔暗衬底压暗粒子,文字锐利。衬底规则与 .s2-copy 共用（见上方合并选择器，
+   2026-08-05 主人实测「文案区盖住粒子」） */
 
 /* 矮视口(≤950px 高):面板/文案区用固定 px 整体上移,避开底部 HUD 轨道
    (2026-08-05 主人实测:850px 视口下注记文案与 HUD 重叠 —— 布局溢出同一根因)。
@@ -1425,7 +1390,7 @@ body:has(.hud[data-act='act3']) {
   font-size: clamp(1.15rem, 2.2vw, 1.55rem);
   font-weight: 700;
   color: var(--text);
-  text-shadow: 0 0 22px rgba(125, 211, 252, 0.25);
+  text-shadow: 0 0 22px rgb(var(--mono-rgb) / 0.25);
   opacity: 0;
 }
 
@@ -1441,7 +1406,7 @@ body:has(.hud[data-act='act3']) {
 /* 合成标注 + 终端注记：小字、dim 色（简报 §4 措辞诚实） */
 .s1-copy-notes {
   margin-top: 2.2em;
-  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.8;
   color: rgba(232, 236, 244, 0.42);

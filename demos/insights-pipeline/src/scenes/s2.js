@@ -1,9 +1,10 @@
 // s2.js —— 第一幕 S2「扫盘」会话星云(设计简报 §4 S2,264~286 行)
 //
-// 契约(与 main.js 装配一致):createS2({ scene, camera, uiEl, river, onRestart })
+// 契约(与 main.js 装配一致):createS2({ scene, camera, uiEl, river })
 //   → { enter, scrub, update, dispose }
 //   scene / camera / river 由 main.js 共享(简报 §6.1:三站共享同一光河与坐标系);
 //   渲染由 main.js 统一 renderer.render(scene, camera),本场景不自持 rAF、不渲染。
+//   river 为必传（main.js 引擎级创建，backToPrologue 销毁；本站只用不建不毁）。
 //
 // 星云 = 单个 THREE.Points(一个 draw call,简报 §7.1「粒子 draw call = 1」):
 //   亮星 = STATS.stars(合成会话,视觉锚点,亮度/色相 = 新旧)
@@ -23,8 +24,9 @@
 
 import * as THREE from 'three'
 import gsap from 'gsap'
-import { RIVER, createRiver } from '../river.js'
-import { STATS, SESSIONS, starBrightness } from '../data/sessions.js'
+import { RIVER, COL as RIVER_COL } from '../river.js'
+import { STATS, starBrightness } from '../data/sessions.js'
+import { makeSoftTexture, SOFT_POINT_FRAG, easeInOutQuad, scrubFade, rampCamera, isReducedMotion } from '../utils.js'
 
 // ---------- 星云色(简报 §2.3 river 色阶 + §4.2 新旧梯度) ----------
 const COL = {
@@ -32,9 +34,11 @@ const COL = {
   starOld: new THREE.Color('#5A7A9A'), // 旧星:灰蓝降饱和
   mid: new THREE.Color('#A9C8F2'), // 中景星基色
   far: new THREE.Color('#5D83AF'), // 远景尘基色
-  bodyBlue: new THREE.Color('#4AA8FF'), // river.body(抽取转化目标色,简报 §2.3)
   scan: new THREE.Color('#B8E7FF'), // 扫盘光带(river.core 同色相)
 }
+// 抽河转化目标色 = 河当前 body 色(river.js 单一来源;原复制旧蓝 #4AA8FF
+// 与转青后的河色漂移 ~22° 色相,2026-08-05 已修正)
+const BODY_BLUE = RIVER_COL.body
 const TAU = 18 // 新旧梯度时间常数(简报 §4.2:τ ≈ 14~21 天)
 const META_FALL = 0.03 // 元会话星下坠速率(局部坐标单位/秒,缓慢)
 
@@ -87,7 +91,7 @@ const VERT = /* glsl */ `
   uniform vec3  uExtractTarget; // 河采样点(星云局部坐标)
   uniform float uConvert;       // 拍3b 0→1 星→粒子转化(缩小变暗,色转入 river.body)
   uniform float uDim;           // 拍3c 0→1 星云整体 dim ×0.55(河成为焦点)
-  uniform vec3  uBodyBlue;      // river.body #4AA8FF(转化目标色)
+  uniform vec3  uBodyBlue;      // river.body 当前色(转化目标色)
   uniform float uPixelRatio;    // DPR(已钳制 2)
   uniform sampler2D uMap;       // 64² 软斑纹理
 
@@ -141,45 +145,6 @@ const VERT = /* glsl */ `
     gl_Position = projectionMatrix * mv;
   }
 `
-
-const FRAG = /* glsl */ `
-  uniform sampler2D uMap;
-  varying float vAlpha;
-  varying vec3  vColor;
-
-  void main() {
-    vec4 tex = texture2D(uMap, gl_PointCoord);
-    gl_FragColor = vec4(vColor, vAlpha) * tex;
-  }
-`
-
-// 64² 径向软斑 + smoothstep 外圈(与 river.js 同思路,中心 alpha 1.0、
-// 半径 40% 内保持高亮、外 60% 指数衰减)——禁止硬圆点(简报 §3.1)
-function makeSoftTexture() {
-  const size = 64
-  const data = new Uint8Array(size * size * 4)
-  const r = size / 2
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = x + 0.5 - r
-      const dy = y + 0.5 - r
-      const d = Math.sqrt(dx * dx + dy * dy) / r
-      const i = (y * size + x) * 4
-      let a
-      if (d <= 0.4) a = 1.0
-      else {
-        const k = (d - 0.4) / 0.6
-        a = Math.pow(1 - k, 2.2)
-      }
-      a = a * a * (3 - 2 * a)
-      data[i] = data[i + 1] = data[i + 2] = 255
-      data[i + 3] = Math.round(a * 255)
-    }
-  }
-  const tex = new THREE.DataTexture(data, size, size)
-  tex.needsUpdate = true
-  return tex
-}
 
 // 扫盘光带纹理:横向单高斯透明度渐变(中心亮、两侧指数衰减),
 // 平面宽 3.6 → u±0.18 ↔ 世界 ±0.32,与 shader 扫描带半宽 0.35 同量级
@@ -237,16 +202,15 @@ function sampleBright(existing) {
 }
 
 // ---------- 场景工厂 ----------
-export function createS2({ scene, camera, uiEl, river = null, onRestart = null } = {}) {
-  void onRestart // s2 无重启入口(重启在 HUD/s1),契约预留
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const metaSession = SESSIONS.find((s) => s.isMeta) // 元会话星数据(s12)
+// river 为必传参数（main.js 引擎级创建共享河，本站只用不建不毁）
+// 开场相机位导出给 main.js 的 g1 门内滑轨（滑轨终点 = 本站 enter 位，无缝衔接）
+export const S2_CAM_ENTER = new THREE.Vector3(0, 0.5, 13)
+export const S2_LOOK_ENTER = RIVER.getMidPoint() // 星云中心 = 河主干 t=0.5 处(简报 §4 S2)
+const S2_CAM_END = new THREE.Vector3(0, 0.35, 3.5) // scrub 终点（平移单调推进，lookAt 恒星云）
 
-  // 独立运行时兜底:装配方(main.js)会传共享 river;未传时自建(并负责销毁)
-  const ownRiver = river === null
-  if (ownRiver) river = createRiver({ scene })
-
-  const nebulaCenter = RIVER.getMidPoint() // 星云中心 = 河主干 t=0.5 处(简报 §4 S2)
+export function createS2({ scene, camera, uiEl, river }) {
+  const reducedMotion = isReducedMotion()
+  const nebulaCenter = S2_LOOK_ENTER
 
   // ---------- 星点数据:亮星(数据即物体)+ 中景 + 远景 + 元会话星 ----------
   const stars = [] // { pos:[x,y,z], size, bright, color, phase, period, drift, flick, fall, extract }
@@ -369,7 +333,7 @@ export function createS2({ scene, camera, uiEl, river = null, onRestart = null }
     uExtractTarget: { value: EXTRACT_TARGET.clone() },
     uConvert: { value: 0 },
     uDim: { value: 0 },
-    uBodyBlue: { value: COL.bodyBlue.clone() },
+    uBodyBlue: { value: BODY_BLUE.clone() },
     uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
     uMap: { value: makeSoftTexture() },
   }
@@ -377,7 +341,7 @@ export function createS2({ scene, camera, uiEl, river = null, onRestart = null }
   const mat = new THREE.ShaderMaterial({
     uniforms,
     vertexShader: VERT,
-    fragmentShader: FRAG,
+    fragmentShader: SOFT_POINT_FRAG,
     transparent: true,
     depthWrite: false,
     depthTest: false, // 与 river.js 同理由:additive 自遮挡破坏叠白观感
@@ -488,11 +452,12 @@ export function createS2({ scene, camera, uiEl, river = null, onRestart = null }
 
   // ---------- 生命周期 ----------
   let entered = false
+  let lastP = -1 // scrub p 判等（滚动静止时跳过重复写入）
   return {
     enter() {
       // 定位相机(简报 §4.2 相机缓慢不抢戏):enter 定位 → scrub 单调推进;
-      // 相机与 g1 门内滑轨终点精确衔接(画卷无缝,main.js 配置)
-      camera.position.set(0, 0.5, 13)
+      // 相机与 g1 门内滑轨终点精确衔接(画卷无缝,main.js 引用 S2_CAM_ENTER)
+      camera.position.copy(S2_CAM_ENTER)
       camera.lookAt(nebulaCenter)
       // 河段窗口:右缘 → 叉口 [0.35,1](开场河从右缘进入 = 承接 S1 出口,画卷不断流)
       river.setVisibleRange(0.35, 1)
@@ -505,29 +470,23 @@ export function createS2({ scene, camera, uiEl, river = null, onRestart = null }
     },
 
     scrub(p) {
-      if (!entered) return
+      if (!entered || p === lastP) return // p 判等：滚动静止时跳过（timeline 每帧都调 scrub）
+      lastP = p
       // 相机:平移单调推进(简报 §4.2:orbit ≤ 4°/10s 量级,用平移不用旋转),
       // easeInOutQuad 稳(简报 §5 缓动速查:相机 easeInOutQuad)
-      const k = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2
-      camera.position.set(0, 0.5 - 0.15 * k, 13 - 9.5 * k)
-      camera.lookAt(nebulaCenter)
+      rampCamera(camera, S2_CAM_ENTER, nebulaCenter, S2_CAM_END, nebulaCenter, easeInOutQuad(p))
       // 文案浮现(滚动 0.2~0.75,逐字锚定):大字 → 小字 → 合成标注
-      const reveal = (el, a, b) => {
-        const kk = Math.max(0, Math.min(1, (p - a) / (b - a)))
-        el.style.opacity = String(kk)
-        el.style.transform = kk >= 1 ? 'none' : `translateY(${(1 - kk) * 14}px)`
-      }
-      reveal(copyBig, 0.2, 0.32)
-      reveal(copySmall[0], 0.34, 0.47)
-      reveal(copySmall[1], 0.49, 0.62)
-      reveal(copyNote, 0.64, 0.75)
+      scrubFade(copyBig, p, 0.2, 0.32)
+      scrubFade(copySmall[0], p, 0.34, 0.47)
+      scrubFade(copySmall[1], p, 0.49, 0.62)
+      scrubFade(copyNote, p, 0.64, 0.75)
     },
 
     update(t, dt) {
       if (!entered) return
       // 星云闪烁/微漂/下坠由 shader uTime 驱动;reduced-motion 下静止(简报 §5)
+      // 共享河每帧推进由 main.js 统一执行（引擎级资产，本站不转发）
       if (!reducedMotion) uniforms.uTime.value += dt
-      river.update(t, dt) // 共享河每帧推进(流动/呼吸/脉冲衰减/指针偏)
     },
 
     dispose() {
@@ -541,7 +500,6 @@ export function createS2({ scene, camera, uiEl, river = null, onRestart = null }
       geo.dispose()
       scene.remove(group)
       copy.remove()
-      if (ownRiver) river.dispose() // 仅兜底自建河负责销毁(共享河归装配方)
     },
   }
 }

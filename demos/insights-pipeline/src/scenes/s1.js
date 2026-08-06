@@ -17,14 +17,15 @@
 // 生命周期对齐 timeline.js 段契约(§6.2):
 //   enter()   定位共享相机 → 挂 DOM → 锚点逆投影 → 自动播放 4 拍入场节拍(简报 §4「入场节拍自动播放」)
 //   scrub(p)  站内滚动进度 0~1:相机沿河带游移 + 0.20~0.75 文案浮现(简报 §4 站内滚动编排)
-//   update(t, dt) 每帧 river.update(渲染由 main.js 的 onScrollFrame 统一执行)
-//   dispose() 释放本站资源 + 河段交接(S2 视野承接 [0.35,1])
+//   dispose() 释放本站资源(渲染与共享河推进由 main.js 统一执行,本站无 update)
 // ============================================================
 
 import * as THREE from 'three'
 import gsap from 'gsap'
 import { SESSIONS } from '../data/sessions.js'
 import { COLORS } from '../theme.js'
+import { COL as RIVER_COL } from '../river.js'
+import { easeInOutQuad, scrubFade, rampCamera, isReducedMotion } from '../utils.js'
 
 // ---------- 参数(简报 §4 S1 基线;偏离处见注释,§0.6「改了要能说出为什么」) ----------
 const TARGET_Z = 12 // 源头深度:锚点射线沿视线走到 z=12(简报 §3.5)
@@ -37,8 +38,8 @@ export const S1_CAM_END = new THREE.Vector3(2.2, -0.1, 11.5)
 export const S1_LOOK_END = new THREE.Vector3(0.85, -1.59, 8.0)
 // 河段可见窗口(画卷站界,与 river.js uSegRange 配套):
 //   S1 出生→右缘 [0,0.35](淡出带 [0.32,0.35])/ S2 [0.35,1](淡入同带)→ 重叠带无缝衔接
+//   S2 窗口由 s2 自身 enter 设置（交接不在此处，删除了原 dispose 里的 HANDOFF 冗余写）
 const RANGE_S1 = [0, 0.35]
-const RANGE_HANDOFF = [0.35, 1]
 const TYPED_CMD = '/insights'
 // 逐字非匀速:标点略慢、字母略快(简报 §4「28~42ms/字符」;确定性,不随机)
 const CHAR_MS = { '/': 40, i: 28, n: 32, s: 32, g: 32, h: 32, t: 32 }
@@ -65,14 +66,15 @@ const HIT_INFO = (() => {
 // 1.0 让「引擎开始跑」可感,仍远低于注入全量,拍4 爆发不稀释;合成,措辞诚实
 const PREWARM_VH = 1.0
 
-// 字符光晕(简报 §4 终端细节):唯一亮色焦点用;EMBER 白 = 简报 §2.3 river.ember
-const EMBER = '#E8F4FF'
+// 字符光晕(简报 §4 终端细节):唯一亮色焦点用;EMBER 白 = river.js 源头色(单一来源)
+const EMBER = RIVER_COL.ember.getStyle()
 const GLOW = '0 0 6px rgba(122,210,255,0.35), 0 0 14px rgba(74,168,255,0.15)'
 const GLOW_HIT = '0 0 10px rgba(125,211,252,0.7), 0 0 22px rgba(74,168,255,0.35)'
 const HIT_DIM = 'rgba(125, 211, 252, 0.45)' // hit 标记落定色(与 CSS .s1-row-hit 同)
 
-export function createS1({ scene, camera, uiEl, river = null, onRestart = null } = {}) {
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+// river 为必传参数（main.js 引擎级创建共享河，本站只用不建不毁）
+export function createS1({ scene, camera, uiEl, river, onRestart = null } = {}) {
+  const reducedMotion = isReducedMotion()
   const d = (x) => (reducedMotion ? 0 : x) // 简报 §5:reduce 下节拍直接呈现(gsap duration 0)
 
   let tl = null
@@ -84,7 +86,7 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
   let copyNotes = null
   let built = false
   let disposed = false
-  const _look = new THREE.Vector3() // scrub 相机 lookAt 临时量(避免每帧 new)
+  let lastP = -1 // scrub p 判等（滚动静止时跳过重复写入）
 
   // ---------- DOM:终端面板(挂 #ui 层)+ 站内文案(文案逐字锚定简报 §4,不得改写) ----------
   function buildDom() {
@@ -147,7 +149,7 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
   // CAM_START 克隆相机逆投影(与实时相机/滚动位置无关,确定性;clone 后必须
   // updateMatrixWorld,否则 unproject 仍吃副本的陈旧矩阵)
   function anchor() {
-    if (!barEl || !camera || !river) return
+    if (!barEl || !camera) return
     const rect = barEl.getBoundingClientRect()
     const sx = rect.left + rect.width // 进度条右端(100% 时刻 fill 到达处)
     const sy = rect.top + rect.height / 2
@@ -202,7 +204,7 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
       typedEl.textContent += TYPED_CMD[pos]
       if (pos === 0) {
         cursorEl.classList.add('is-steady') // 输入中停闪常亮(简报 §4 块状光标)
-        river?.pulseAt(0, 0.5) // 首字输入:源头 L3 微闪 hint(简报 §4 拍1)
+        river.pulseAt(0, 0.5) // 首字输入:源头 L3 微闪 hint(简报 §4 拍1)
       }
       pos++
     }
@@ -232,11 +234,11 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
       beats.set(hitEl, { color: EMBER, opacity: 1, textShadow: GLOW_HIT }, rt + d(0.02))
       beats.set(hitEl, { color: HIT_DIM, opacity: 0.55, textShadow: 'none' }, rt + d(0.1))
       // 每次 hit:源头增强一档(简报 §4 拍2;0.6 —— 影评人「预热太绅士,再狠一点」)
-      beats.call(() => river?.pulseAt(0, 0.6), [], rt + d(0.02))
+      beats.call(() => river.pulseAt(0, 0.6), [], rt + d(0.02))
     })
     const lastFlashEnd = rowStart + d(0.08) + d(2 * 0.055) + d(0.1)
     // 三次完成:源头拉满 + ember 脉冲一次(简报 §4 拍2)
-    beats.call(() => river?.pulseAt(0, 1), [], lastFlashEnd + d(0.15))
+    beats.call(() => river.pulseAt(0, 1), [], lastFlashEnd + d(0.15))
 
     // ---- 拍3:analyzing 浮现(命令表结束后 120~180ms,勿过早)+ 确定性假进度 ----
     const anaT = lastFlashEnd + d(0.18)
@@ -246,8 +248,8 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
     // 与拍4 全量注入形成「沉睡 → 预热 → 注入」三级,观众不再等到 100% 才懂河
     beats.call(
       () => {
-        river?.setInfoVolume(PREWARM_VH)
-        river?.setFlow('warm')
+        river.setInfoVolume(PREWARM_VH)
+        river.setFlow('warm')
       },
       [],
       anaT
@@ -266,16 +268,16 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
     // 预热后停顿有了内容 —— 河在微宽流动,停顿是「引擎在跑」的呼吸而非空档)
     const T0 = progT + d(0.4) + d(0.35)
     // 记录注入时刻(reduce 守卫:uTime 冻结时记录会让前锋卡在源头,不调即瞬达)
-    beats.call(() => { if (!reducedMotion) river?.injectInfoVolume() }, [], T0)
+    beats.call(() => { if (!reducedMotion) river.injectInfoVolume() }, [], T0)
     // 宽度:平滑补间到信息量全量(简报 §3.3 河宽随信息量,连续量)
-    const vh = { v: river?.getInfoVolume?.() ?? 0 }
+    const vh = { v: river.getInfoVolume() }
     beats.to(
       vh,
       {
         v: HIT_INFO, // 命中会话信息量 ≈ 54(最老三 facet 会话 token 和 / 1000)
         duration: d(1.2),
         ease: 'power2.out',
-        onUpdate: () => river?.setInfoVolume(vh.v),
+        onUpdate: () => river.setInfoVolume(vh.v),
       },
       T0
     )
@@ -297,12 +299,12 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
     // 流速错峰:宽度补间完成后 +0.1s 才「唰」(影评人 2026-08-05 两轮:0.35s/0.7s
     // 时宽度还在爬升,「宽波」和「加速」被读成一起涨;补间 1.2s 完成后宽度已到位,
     // 观众先读「信息量上来了」,再整体加速,两拍可分)
-    beats.call(() => river?.setFlow('s1'), [], T0 + d(1.2) + d(0.1))
+    beats.call(() => river.setFlow('s1'), [], T0 + d(1.2) + d(0.1))
     // 走满顶点(影评人 2026-08-05:「analyzing 走满的那帧必须是因果顶点」):
     // 进度条 100% 瞬间 —— 源头再白闪一次(注入完成)+ 面板斩截闪
     beats.call(
       () => {
-        river?.pulseAt(0, 1)
+        river.pulseAt(0, 1)
         flashTerm()
       },
       [],
@@ -327,7 +329,7 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
       camera.position.copy(CAM_START)
       camera.lookAt(CAM_LOOK_START)
       // 河段窗口:S1 带(出生→右缘);「重新体验」重入时重置(旧值可能是 S3 的全河)
-      river?.setVisibleRange(...RANGE_S1)
+      river.setVisibleRange(...RANGE_S1)
 
       buildDom()
       anchor()
@@ -343,31 +345,20 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
 
     // 站内滚动:相机沿河带游移(展卷)+ 0.20~0.75 文案浮现(大字 → 小字 → 注记)
     scrub(p) {
+      if (p === lastP) return // p 判等：滚动静止时跳过（timeline 每帧都调 scrub）
+      lastP = p
       // 画卷展卷:cam-start 全带 → cam-end 出口(easeInOutQuad 同 S2/S3 相机语言;
       // 河源头随相机游移滚出屏,站末画面 = 河抵右缘)
-      const k = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2
-      camera.position.lerpVectors(CAM_START, S1_CAM_END, k)
-      camera.lookAt(_look.copy(CAM_LOOK_START).lerp(S1_LOOK_END, k))
+      rampCamera(camera, CAM_START, CAM_LOOK_START, S1_CAM_END, S1_LOOK_END, easeInOutQuad(p))
       // 面板柱随卷出屏(2026-08-05 实测修复):DOM 面板不随相机移动,相机右移后
       // 面板若留在屏内会与已滚出屏的河源头脱节成「贴纸」。0.75 后文案已浮现完,
       // 柱整体左移 + 渐隐出屏(55vw = 面板+文案完全滚出),与源头出屏同节奏
       const pan = Math.max(0, (p - 0.75) / 0.25)
       root.style.transform = `translateX(${-pan * 55}vw)`
       root.style.opacity = String(1 - pan * 0.9)
-      const show = (el, a, b) => {
-        if (!el) return
-        const kk = Math.min(1, Math.max(0, (p - a) / (b - a)))
-        el.style.opacity = String(kk)
-        el.style.transform = `translateY(${(1 - kk) * 22}px)`
-      }
-      show(copyBig, 0.2, 0.42)
-      show(copySmall, 0.36, 0.6)
-      show(copyNotes, 0.55, 0.75)
-    },
-
-    // 每帧:粒子时间推进(渲染由 main.js 的 onScrollFrame 统一执行)
-    update(t, dt) {
-      river?.update(t, dt)
+      scrubFade(copyBig, p, 0.2, 0.42, 22)
+      scrubFade(copySmall, p, 0.36, 0.6, 22)
+      scrubFade(copyNotes, p, 0.55, 0.75, 22)
     },
 
     dispose() {
@@ -376,9 +367,7 @@ export function createS1({ scene, camera, uiEl, river = null, onRestart = null }
       built = false
       tl?.kill()
       window.removeEventListener('resize', onResize)
-      // 河段交接:本站 teardown 发生在 g1 黑场 dip 期,把河段窗口切给 S2 视野
-      // (S2 enter 会再次确认,幂等)—— 河始终连续,画卷不中断
-      river?.setVisibleRange(...RANGE_HANDOFF)
+      // 河段窗口交接由 s2 enter 自行设置（幂等；本站不再写 HANDOFF，删冗余）
       root?.remove()
     },
   }

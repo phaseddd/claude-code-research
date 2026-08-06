@@ -11,15 +11,16 @@ import gsap from 'gsap'
 import { mountPrologue } from './prologue.js'
 import { createScroll } from './scroll.js'
 import { createTimeline } from './timeline.js'
-import { createRiver, RIVER } from './river.js'
+import { createRiver } from './river.js'
 import { createS1, S1_CAM_END, S1_LOOK_END } from './scenes/s1.js'
-import { createS2 } from './scenes/s2.js'
+import { createS2, S2_CAM_ENTER, S2_LOOK_ENTER } from './scenes/s2.js'
 import { createS3 } from './scenes/s3.js'
-import { createHud } from './hud.js'
+import { createHud, ACT_TITLES } from './hud.js'
 import { STATS } from './data/sessions.js'
+import { easeInOutSine, isReducedMotion, rampCamera } from './utils.js'
 
 // 尊重动效偏好：黑场三段式淡入在 reduce 下直接呈现
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const reducedMotion = isReducedMotion()
 
 // WebGL2 检测：无则降级为静态科普页（科普信息不丢）
 const supportsWebGL2 = (() => {
@@ -52,13 +53,13 @@ appEl.appendChild(uiEl)
 //     domElement.remove() 后再次进入不重新挂载 → #scene 无 canvas,3D 层整个消失
 //     (无 GL 报错、无粒子)。修复:renderer/scene/camera 全部随引擎会话创建销毁,
 //     shared 的 scene/camera 字段每次赋值(场景模块运行时取 shared 最新值)。
-let renderer = null // 引擎三件套(bootTimeline 新建 / backToPrologue 销毁)
-let scene = null
-let camera = null
+// 2026-08-06 简化:scene/camera 不再持有模块级镜像 —— 场景模块只认 shared，
+// 模块内部(渲染/滑轨/resize)也统一走 shared 字段,单一事实来源
+let renderer = null // 渲染器(bootTimeline 新建 / backToPrologue 销毁;scene/camera 存 shared)
 
 const onResize = () => {
-  camera.aspect = window.innerWidth / window.innerHeight
-  camera.updateProjectionMatrix()
+  shared.camera.aspect = window.innerWidth / window.innerHeight
+  shared.camera.updateProjectionMatrix()
   renderer.setSize(window.innerWidth, window.innerHeight)
 }
 
@@ -72,38 +73,30 @@ const GATE_DURATION = 3.5 // 幕间 gate 时长（秒,沿用现有）
 const LIGHT_GATE_DURATION = 1.8 // 幕内轻量 gate（秒,简报 §6.1:1.5~2s）
 
 // ---------- 三站共享的共享容器 ----------
-// river 生命周期 = 第一幕全程（简报 §6.1:进入 S1 创建,离开 S3 时 teardown）:
-// 由 s1 段 enter 创建、s3 段 teardown 销毁（s3 teardown 被 gate1to2 的 deferPrev
-// 推迟到黑场中段执行,黑场里河已不可见,衔接安全）
+// river 生命周期 = 引擎级（简报 §6.1 贯穿三幕）:bootTimeline 创建 / backToPrologue
+// 销毁（段只切可见窗口；M4/M5 的 S4~S6 继续沿用同一实例,不随站建毁）
 const shared = { scene: null, camera: null, uiEl, river: null } // scene/camera 随引擎会话赋值
 
 // 站级场景段：enter 构建场景 → scrub 站内滚动编排 → update 每帧 idle → teardown 释放
+// （scrub/update 双可选：场景可实现全部或部分生命周期，timeline 侧 `?.()` 调用）
 function makeSceneSegment({ id, create, scrollVh }) {
   let inst = null
   return {
     id,
     scrollVh,
     enter(ctx) {
-      if (id === 's1' && !shared.river) {
-        // 分流比来自合成数据统计(简报 §2.5:meta 支明显宽于 facet 支)
-        shared.river = createRiver({ scene, branchShare: STATS.metaShare })
-      }
       inst = create({ ...shared, onRestart: backToPrologue })
       inst.enter()
     },
     scrub(ctx, p) {
-      inst?.scrub(p)
+      inst?.scrub?.(p)
     },
     update(ctx, t, dt) {
-      inst?.update(t, dt)
+      inst?.update?.(t, dt)
     },
     teardown(ctx) {
       inst?.dispose()
       inst = null
-      if (id === 's3' && shared.river) {
-        shared.river.dispose()
-        shared.river = null
-      }
     },
   }
 }
@@ -114,23 +107,21 @@ function makeSceneSegment({ id, create, scrollVh }) {
 //   minOpacity   dip 底值(默认 0 = 全黑;g1 用 0.25 = 浅呼吸,画卷换卷不黑屏)
 //   cameraPath / lookPath  门内相机滑轨(cam-end → 下一站相机,沿河连续,
 //   无缝衔接的关键:滚动过站时画面是「镜头沿河滑行」而非硬切)
-const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2
-const _gateLook = new THREE.Vector3() // 滑轨 lookAt 临时量(避免每帧 new)
 function makeFadeGate({ id, duration = GATE_DURATION, minOpacity = 0, cameraPath = null, lookPath = null }) {
   return {
     id,
     scrollVh: GATE_VH,
     autoScroll: true,
     duration,
+    // 三段式淡入段占比（0.65~1）：timeline 的转场接续补间按此同速率折算，
+    // 改门槛只改这里一处（原 0.35 魔法数跨两文件手抄）
+    fadeInShare: 0.35,
     deferPrev: true, // 进入本段时旧段不立即 teardown，由下方 scrub 的 teardownOld() 控制
-    enter() {}, // gate 无场景
     scrub(ctx, p) {
       // 相机滑轨(画卷展卷的站间段):easeInOutSine 与时间轴自动推进同源,
-      // 终点 = 下一站 enter 的相机位 → 无缝
-      if (camera && cameraPath && lookPath) {
-        const e = easeInOutSine(p)
-        camera.position.lerpVectors(cameraPath[0], cameraPath[1], e)
-        camera.lookAt(_gateLook.copy(lookPath[0]).lerp(lookPath[1], e))
+      // 终点 = 下一站 enter 的相机位 → 无缝（终点由场景模块导出的 CAM_ENTER 提供）
+      if (shared.camera && cameraPath && lookPath) {
+        rampCamera(shared.camera, cameraPath[0], lookPath[0], cameraPath[1], lookPath[1], easeInOutSine(p))
       }
       // 三段式(浅 dip 版):0~0.35 旧场景淡出到 minOpacity → 0.35 卸旧
       // → 0.65 预挂新场景 → 0.65~1 淡入回全亮
@@ -143,13 +134,11 @@ function makeFadeGate({ id, duration = GATE_DURATION, minOpacity = 0, cameraPath
           ctx.fadeScene(minOpacity + ((p - 0.65) / 0.35) * (1 - minOpacity))
         }
       }
+      // 离开 gate 时透明度不再写回（2026-08-05 修复，PLAN §4.1）：
+      // 归 1 统一由 timeline 接管 —— 自然走完时时间驱动 scrub 已在末帧写 1；
+      // 被打断（wheel 硬切）时由 switchTo 的接续补间从当前值平滑到 1；
+      // skipTo 显式跳转由 force 分支瞬间归 1。teardown 写回会与接续补间互相覆盖 → 抖动
     },
-    update() {},
-    // 离开 gate 时透明度不再写回（2026-08-05 修复，PLAN §4.1）：
-    // 归 1 统一由 timeline 接管 —— 自然走完时时间驱动 scrub 已在末帧写 1；
-    // 被打断（wheel 硬切）时由 switchTo 的接续补间从当前值平滑到 1；
-    // skipTo 显式跳转由 force 分支瞬间归 1。teardown 写回会与接续补间互相覆盖 → 抖动
-    teardown() {},
   }
 }
 
@@ -170,11 +159,6 @@ function makeActSegment({ id, title, subtitle }) {
       `
       uiEl.appendChild(root)
     },
-    scrub(ctx, p) {
-      // 骨架无场景内容,滚动只占预算(第二/三幕 M4/M5 实现真实编排)
-      void p
-    },
-    update() {},
     teardown() {
       root?.remove()
       root = null
@@ -185,14 +169,14 @@ function makeActSegment({ id, title, subtitle }) {
 const segments = [
   makeSceneSegment({ id: 's1', create: createS1, scrollVh: SCENE_VH }),
   // 画卷滑轨门(S1→S2):浅 dip(0.25)不黑屏 + 相机沿河滑行到 S2 开场位
-  // (终点 = s2.enter 的 (0,0.5,13)/lookAt 星云,由 s2.js 确认)——
+  // (终点 = s2.js 导出的 S2_CAM_ENTER/S2_LOOK_ENTER,由场景模块对齐)——
   // 滚动过站 = 镜头追着河走,「天衣无缝」的衔接点
   makeFadeGate({
     id: 'g1',
     duration: LIGHT_GATE_DURATION,
     minOpacity: 0.25,
-    cameraPath: [S1_CAM_END, new THREE.Vector3(0, 0.5, 13)],
-    lookPath: [S1_LOOK_END, RIVER.getMidPoint()],
+    cameraPath: [S1_CAM_END, S2_CAM_ENTER],
+    lookPath: [S1_LOOK_END, S2_LOOK_ENTER],
   }),
   makeSceneSegment({ id: 's2', create: createS2, scrollVh: SCENE_VH }),
   makeFadeGate({ id: 'g2', duration: LIGHT_GATE_DURATION }),
@@ -200,13 +184,13 @@ const segments = [
   makeFadeGate({ id: 'gate1to2' }),
   makeActSegment({
     id: 'act2',
-    title: '第二幕 · 理解',
+    title: ACT_TITLES.act2, // 幕标题单一来源在 hud.js（HUD 轨道同款文案）
     subtitle: '对话被压缩、被读懂 —— 投影、打标签，慢而重场',
   }),
   makeFadeGate({ id: 'gate2to3' }),
   makeActSegment({
     id: 'act3',
-    title: '第三幕 · 生成',
+    title: ACT_TITLES.act3,
     subtitle: '报告长出来 —— 七章并行、合成总览、落盘交付',
   }),
 ]
@@ -225,11 +209,12 @@ function bootTimeline() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)) // DPR 钳制 2(简报 §3.1)
   renderer.setSize(window.innerWidth, window.innerHeight)
   sceneEl.appendChild(renderer.domElement)
-  scene = new THREE.Scene()
-  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200)
-  camera.position.set(0, 0.7, 18.5) // 初始:S1 源头近景(各站 enter 再定位)
-  shared.scene = scene
-  shared.camera = camera
+  shared.scene = new THREE.Scene()
+  shared.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200)
+  shared.camera.position.set(0, 0.7, 18.5) // 初始:S1 源头近景(各站 enter 再定位)
+  // 引擎级光河:第一幕三站共享(简报 §6.1;bootTimeline 创建 / backToPrologue 销毁,
+  // 段只切可见窗口)。分流比来自合成数据统计(简报 §2.5:meta 支明显宽于 facet 支)
+  shared.river = createRiver({ scene: shared.scene, branchShare: STATS.metaShare })
   window.addEventListener('resize', onResize)
   // 虚拟滚动：wheel / 触屏 / 键盘 → targetVh；lerp 平滑 → 每帧喂给时间轴
   scroll = createScroll({ max: totalVh, onFrame: onScrollFrame })
@@ -255,9 +240,12 @@ function bootTimeline() {
 
 // 滚动帧 → 时间轴（scroll 只在引擎阶段存在：序章阶段未创建，
 // 回到序章时已 dispose 取消 rAF，onFrame 不再被调用）→ 每帧渲染
+// 引擎级光河每帧推进也在这里统一执行（段不再各自转发 river.update，
+// 新场景忘转发河即静止的问题从结构上消失）
 function onScrollFrame(current, target, dt) {
   timeline?.onFrame(current, target, dt)
-  renderer.render(scene, camera)
+  shared.river?.update(0, dt)
+  renderer.render(shared.scene, shared.camera)
 }
 
 // 回到序章：销毁时间轴 / HUD / 滚动 / 渲染器 → 重置黑场态 → 重新挂载序章
@@ -281,8 +269,6 @@ function backToPrologue() {
   renderer.dispose()
   renderer.domElement.remove()
   renderer = null
-  scene = null
-  camera = null
   shared.scene = null
   shared.camera = null
   sceneEl.style.opacity = '1' // 重置黑场态，供下次进入复用
