@@ -1046,9 +1046,19 @@ body:has(.hud[data-act='act3']) {
   left: 0;
   top: 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: clamp(13px, 1.2vw, 15px); /* 演出化调整：原 10px 不可读，随视口 13~15px */
   letter-spacing: 0.08em;
   white-space: nowrap;
+  /* 暗色圆角小底片（演出化调整：与 .s1-copy::before 同款 radial-gradient 思路，
+     粒子河背景下文字锐利可读；边缘半透明融合，中心足够暗保证字净） */
+  background: radial-gradient(
+    ellipse 130% 130% at 50% 50%,
+    rgba(5, 7, 13, 0.85) 30%,
+    rgba(5, 7, 13, 0.68) 72%,
+    rgba(5, 7, 13, 0.55) 100%
+  );
+  border-radius: 5px;
+  padding: 2px 8px;
   transform: translate(-50%, -115%);
   pointer-events: none;
   opacity: 0; /* 拍3 入盒时由节拍补间浮现 */
@@ -1058,7 +1068,8 @@ body:has(.hud[data-act='act3']) {
   text-shadow: 0 0 8px rgb(var(--mono-rgb) / 0.55);
 }
 .s3-label-facet {
-  color: rgba(232, 236, 244, 0.45); /* 哑盒标签压暗（复用不发光） */
+  color: rgba(240, 228, 236, 0.78); /* 哑盒标签：淡粉灰（演出化调整：亮度 0.45 → 0.78，
+     粉/灰同族于 facet 支细边 EDGE_FACET 的品红倾向，衬底上仍可读） */
 }
 
 /* ---------- 第一幕场景（S1 命令命中，简报 §4 S1） ----------
