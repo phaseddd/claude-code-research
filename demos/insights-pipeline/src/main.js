@@ -218,8 +218,9 @@ function bootTimeline() {
   window.addEventListener('resize', onResize)
   // 虚拟滚动：wheel / 触屏 / 键盘 → targetVh；lerp 平滑 → 每帧喂给时间轴
   scroll = createScroll({ max: totalVh, onFrame: onScrollFrame })
-  // HUD 覆盖层：节点点击 → 跳到对应站/幕（segments 是模块级常量，直接查）
-  hud = createHud({ uiEl, onSelect: (segId) => timeline?.skipTo(segId) })
+  // HUD 覆盖层：节点点击 → 跳到对应站/幕（segments 是模块级常量，直接查）；
+  // 常驻「回到序章」→ 销毁引擎重建序章（U5，全站逃生口）
+  hud = createHud({ uiEl, onSelect: (segId) => timeline?.skipTo(segId), onRestart: backToPrologue })
   timeline = createTimeline({
     segments,
     scroll,

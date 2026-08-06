@@ -876,6 +876,34 @@ body:has(.hud[data-act='act3']) {
   text-shadow: 0 0 12px var(--hud-accent, rgb(var(--mono-rgb) / 0.6));
 }
 
+/* 常驻「回到序章」（U5）：hud-bar 右缘小链接，全站逃生口。
+   视觉语言沿用 .s1-restart（等宽小字 + dim 色，hover 青亮 + 光晕）；
+   比计数/标题低一档字号，常驻不抢戏 —— 但保持 #ui pointer-events: none
+   之下显式可点（同 .hud-track / .s1-restart 的做法） */
+.hud-restart {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: rgb(var(--mono-rgb) / 0.55);
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  cursor: pointer;
+  pointer-events: auto;
+  white-space: nowrap;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+.hud-restart:hover {
+  color: var(--mono);
+  text-shadow: 0 0 10px rgb(var(--mono-rgb) / 0.6);
+}
+
+.hud-restart:focus-visible {
+  outline: 2px solid var(--mono);
+  outline-offset: 3px;
+}
+
 /* 入场：节点逐个上浮浮现（--i 供 stagger），标题与计数同入 */
 .hud-enter .hud-node {
   animation: hud-node-in 0.45s cubic-bezier(0.2, 0.6, 0.3, 1) backwards;
@@ -883,7 +911,8 @@ body:has(.hud[data-act='act3']) {
 }
 
 .hud-enter .hud-title,
-.hud-enter .hud-counter {
+.hud-enter .hud-counter,
+.hud-enter .hud-restart {
   animation: hud-node-in 0.45s cubic-bezier(0.2, 0.6, 0.3, 1) backwards;
   animation-delay: 0.1s;
 }
@@ -906,12 +935,13 @@ body:has(.hud[data-act='act3']) {
   }
   .hud-enter .hud-node,
   .hud-enter .hud-title,
-  .hud-enter .hud-counter {
+  .hud-enter .hud-counter,
+  .hud-enter .hud-restart {
     animation: none;
   }
 }
 
-/* 窄屏：标题让位给轨道（标题信息已在骨架覆盖层），只留轨道 + 计数 */
+/* 窄屏：标题让位给轨道（标题信息已在骨架覆盖层），只留轨道 + 计数 + 回到序章 */
 @media (max-width: 720px) {
   .hud-title {
     display: none;
