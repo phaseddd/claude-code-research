@@ -23,7 +23,9 @@
 // 相机（简报 §4.3 / §5「相机少犹豫」）：enter (0, 0.35, 6) lookAt (0, 0.4, -8)；
 // scrub 单调推进到 (0, 0.7, -6)（看叉口与两盒），不回摆。
 //
-// 文案锚点：PLAN §2.2 S3 原文逐字（大字/小字分层，不得改写删减）；合成标注措辞诚实。
+// 文案锚点：PLAN §2.2 S3 原文为基线；lead 数字口径按演出基线调整（演出化调整，
+// 2026-08-06：PLAN「几百个会话」与合成数据 11 个会话矛盾，观众跨站对比露馅，改「十几个会话」）；
+// 大字/小字分层与合成标注措辞诚实不变。
 //
 // 决策记录（简报 §0.6：参数是基线，改了要能说出为什么）：
 //   1. 线宽：WebGL 线宽钳制 1px，「1.5px 边线 / 0.5px 细边」用亮度与透明度区分
@@ -31,8 +33,10 @@
 //      做视觉近似」。
 //   2. 外晕 8~12px：用 1.35× 透明加法混合盒壳（简报 §4.3 认可的「略大透明盒」），
 //      相机距盒 ~17~29 单位处约合 6~11px（视角换算），opacity 与 intensity 联动。
-//   3. 标签只到「HIT · mtime=」（简报原文）：不补数值 —— 合成数据里没有几百个
-//      会话的真实 mtime，补数反而破坏「数据诚实」（meta 是统计、facet 是判定）。
+//   3. 标签语义（演出化调整，2026-08-06，演出基线优先）：「SET · written」→「WRITE · 写更新」
+//      （meta 盒）、「HIT · mtime=」→「REUSE · 复用确认」（facet 盒）—— 原「HIT · mtime=」
+//      以等号结尾像截断 bug，英文术语对观众不透明；仍不补数值（合成数据里没有真实 mtime），
+//      但语义改为观众可读的中文对照，不再出现等号。
 //   4. 入盒速度：简报 §4.3 拍3「×1.3 加速」与 §3.3.1「分流后减速」冲突，river.js
 //      已裁定减速入盒（s3split 0.06），本场景遵循 river 决议（任务亦写「减速入盒」）。
 //   5. 退潮公式按任务给定（metaInfo + facetInfo×0.7 = 237.6）：log1p 压缩下该值仅
@@ -157,10 +161,10 @@ export function createS3({ scene, camera, uiEl, river }) {
   // ---------- 标签（字即图形，简报 §4.3）：极小等宽字符，3D 盒顶投影到屏幕坐标，update 每帧刷新 ----------
   const labelMeta = document.createElement('span')
   labelMeta.className = 's3-label s3-label-meta'
-  labelMeta.textContent = 'SET · written' // meta 是统计 → 写更新
+  labelMeta.textContent = 'WRITE · 写更新' // meta 是统计 → 写更新（演出化调整：原「SET · written」，见决策记录 3）
   const labelFacet = document.createElement('span')
   labelFacet.className = 's3-label s3-label-facet'
-  labelFacet.textContent = 'HIT · mtime=' // facet 是判定 → 复用确认（决策记录 3：不补数值）
+  labelFacet.textContent = 'REUSE · 复用确认' // facet 是判定 → 复用确认（演出化调整：原「HIT · mtime=」，见决策记录 3）
   uiEl.appendChild(labelMeta)
   uiEl.appendChild(labelFacet)
 
@@ -168,11 +172,12 @@ export function createS3({ scene, camera, uiEl, river }) {
   const metaTop = metaPos.clone().add(new THREE.Vector3(0, BOX_H / 2, 0))
   const facetTop = facetPos.clone().add(new THREE.Vector3(0, BOX_H / 2, 0))
 
-  // ---------- 文案（PLAN §2.2 S3 原文逐字；大字/小字分层，滚动 0.2~0.75 浮现） ----------
+  // ---------- 文案（PLAN §2.2 S3 原文为基线，lead 数字口径按演出基线调整（演出化调整，见文件头注释）；
+  //           大字/小字分层，滚动 0.2~0.75 浮现） ----------
   const copy = document.createElement('div')
   copy.className = 's3-copy'
   copy.innerHTML = `
-    <p class="s3-lead">几百个会话，每次都从头分析太慢。</p>
+    <p class="s3-lead">十几个会话，每次都从头分析太慢。</p>
     <div class="s3-body">
       <p>引擎有两层缓存：meta 是算得出来的统计 —— 时长、工具次数、token 消耗，文件没变就复用；facet 是模型才判断得了的语义标签 —— 目标、满意度、摩擦，每次抽取都花 token，所以保守。</p>
       <p>两层分开存，更新互不误伤。成本与确定性不同，待遇就不同。</p>
@@ -237,7 +242,13 @@ export function createS3({ scene, camera, uiEl, river }) {
       })
       .add(flashSeq, '<')
       .to(mi, { v: 1, duration: 0.55, ease: 'power2.out', onUpdate: () => setMetaIntensity(mi.v) }, '<')
-      .to([labelMeta, labelFacet], { opacity: 1, duration: 0.3 }, '<')
+      // 标签与状态语义对齐（演出化调整，2026-08-06）：
+      // WRITE 在 meta 亮起（写入中）同刻浮现；REUSE 等 facet 确认闪结束
+      // 后浮现并保持 ——「闪后保持」= 复用确认是持久状态，不跟 80ms 闪光一起灭。
+      .to([labelMeta], { opacity: 1, duration: 0.3 }, '<')
+      // REUSE 浮现位置由 flashSeq.duration()（闪总长 0.38s）派生，闪结束后 0.02s；
+      // 若闪时长调整，REUSE 仍自动落在闪后（不写死魔数 0.4）
+      .to([labelFacet], { opacity: 1, duration: 0.3 }, `<${flashSeq.duration() + 0.02}`)
       // 结算：两支河退潮变细（简报 §4.3；公式按任务给定，决策记录 5）
       .to({}, { duration: 0.3, onStart: () => river.setInfoVolume(STATS.metaInfo + STATS.facetInfo * 0.7) })
   }
