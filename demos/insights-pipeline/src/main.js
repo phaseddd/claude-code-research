@@ -232,10 +232,11 @@ function bootTimeline() {
   })
   // 落位第一幕第一站（skipTo 复位位置；创建时已 enter，此处幂等）
   timeline.skipTo('s1')
-  // 黑场三段式：场景先置 0（黑场）→ 停顿 0.3s → 淡入（电影化过渡，避免硬切换）。
+  // 黑场三段式：场景先置 0（黑场）→ 停顿 0.15s → 淡入（电影化过渡，避免硬切换）。
   // 注：sceneEl 初始 opacity 为 1，不先置 0 则 gsap 1→1 是空操作，黑场停顿缺失
+  // 2026-08-06 减半（停顿 0.3→0.15 / 淡入 0.5→0.25），加快进入 S1
   sceneEl.style.opacity = '0'
-  gsap.to(sceneEl, { opacity: 1, duration: reducedMotion ? 0.01 : 0.5, delay: reducedMotion ? 0 : 0.3 })
+  gsap.to(sceneEl, { opacity: 1, duration: reducedMotion ? 0.01 : 0.25, delay: reducedMotion ? 0 : 0.15 })
 }
 
 // 滚动帧 → 时间轴（scroll 只在引擎阶段存在：序章阶段未创建，

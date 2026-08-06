@@ -12,7 +12,7 @@
 
 import { isReducedMotion } from './utils.js'
 
-const WHEEL_FACTOR = 35 // wheel 力度系数（对齐零站点 ×35）
+const WHEEL_FACTOR = 140 // wheel 力度系数（2026-08-06 主人需求连续提速：35 → 70 → 140；快甩单帧 clamp 500px 时 ≈82vh，仍不足一站 180vh）
 const WHEEL_CLAMP = 500 // 单帧 wheel 增量上限（px；对齐零站点 ±500 clamp，防甩动滚轮单帧跳多段）
 const KEY_STEP = 0.9 // 方向键单步（vh）
 const KEY_PAGE = 6 // PageDown / PageUp / Space 步进（vh）

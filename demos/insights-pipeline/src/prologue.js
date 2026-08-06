@@ -99,7 +99,7 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
   const titleEl = root.querySelector('.prologue-title')
   const titleChars = wrapChars(titleEl)
 
-  // ---------- 3. 入场动画（总时长 ≈2.5s） ----------
+  // ---------- 3. 入场动画（总时长 ≈1.15s；2026-08-06 减半，原 ≈2.5s） ----------
   // > p 直选 + chat/pipeline 块：聊天窗与流水线整体作为一块进入
   // （pipeline 是 div 不是 p，漏掉会导致它不参与隐藏/浮现，动画前就露在屏幕上）
   const bodyPs = root.querySelectorAll('.prologue-body > p, .prologue-chat, .pipeline')
@@ -140,12 +140,13 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
       // 标题逐字（模糊锐化）。clearProps 清除动画残留的内联 filter/transform：
       // 子元素带非 none 的 filter 会创建合成层，父级 background-clip: text 的
       // 文字裁剪因此失效 → 整行渐变标题不可见（实测 blur(0px) 残留导致）
-      .to(titleChars, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.45, stagger: 0.02, clearProps: 'filter,transform' })
-      .to(bodyPs, { opacity: 1, y: 0, duration: 0.4, stagger: 0.3 }, '+=0.1') // 三段背景依次
+      // 2026-08-06 时长/stagger 全减半（0.45/0.02 → 0.225/0.01），文字出现加快一倍
+      .to(titleChars, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.225, stagger: 0.01, clearProps: 'filter,transform' })
+      .to(bodyPs, { opacity: 1, y: 0, duration: 0.2, stagger: 0.15 }, '+=0.05') // 三段背景依次
       .to(
         tailEls,
-        { opacity: 1, y: 0, duration: 0.35, stagger: 0.1, onComplete: restorePointer },
-        '+=0.1'
+        { opacity: 1, y: 0, duration: 0.175, stagger: 0.05, onComplete: restorePointer },
+        '+=0.05'
       ) // 来源/按住区收尾（完成后恢复交互）
   }
 
@@ -158,7 +159,7 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
     const holdEl = root.querySelector('.prologue-hold')
     hold = createHoldButton({
       el: holdEl,
-      duration: 2.5, // 按住时长：模拟"引擎运转需要一点时间"
+      duration: 1.25, // 按住时长：模拟"引擎运转需要一点时间"（2026-08-06 减半，加快进入 S1）
       // onProgress 不传：进度环由 hold.js 内部驱动
       onComplete: () => {
         if (done) return
@@ -169,7 +170,7 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
         // 会形成"抽一下"的干扰，黑场停顿由 main.js 在场景侧接管）
         exitTween = gsap.to(root, {
           opacity: 0,
-          duration: reducedMotion ? 0.01 : 0.4,
+          duration: reducedMotion ? 0.01 : 0.2, // 2026-08-06 减半（0.4 → 0.2），加快进入 S1
           ease: 'power2.in',
           onComplete: () => {
             dispose()
