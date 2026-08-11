@@ -1,85 +1,202 @@
 // ============================================================
-// 序章模块（prologue）：黑场排版 → 标题逐字浮现 → 背景段 → 按住运行
+// 序章模块（prologue v2）：docs/PROLOGUE-REDESIGN.md 规格实施
+//
+// 3 秒时间轴（规格 §1）：
+//   0~0.9s    一次摆好（标题逐字锐化保持暗 → 副题+钩子合拍 → 报告条目块
+//             整块落位 → 尾部轻落；点题句暗态在场、圆环常量首帧可见）
+//   0.9s      首行 ▌ 光标开始闪烁（CSS animation-delay 0.9s）
+//   0.9~0.98s 停顿 80ms 真空（心跳星/圆环全停一拍，.paused）
+//   0.98s     可走：圆环恢复交互（hold.setEnabled(true)）
+//   扫读      按住 1.25s 打满（最迟 2.23s 走；2026-08-11 键盘通道已移除）
+//   揭示 0.15s 首行聚焦 ‖ 点题句琥珀通电（全页唯一一次琥珀）‖ 标题字重通电
+//   黑场 0.15s 全页 opacity→0 留极弱星点；结束帧 = 层交换窗口
+//             （2D 卸载 + 3D 接管同一帧，onEnter）→ S1 面板落下（硬切）
 //
 // 契约：
-//   mountPrologue({ uiEl, degraded = false, onEnter = null }) → { dispose }
+//   mountPrologue({ uiEl, onEnter = null }) → { dispose }
 //   - uiEl      DOM 层容器（#ui，pointer-events: none，由 main.js 创建）
-//   - degraded  true 时无 WebGL2：显示全文 + 降级提示，无按住交互、不调 onEnter
-//   - onEnter   非降级时"按住完成 → 退场动画结束"后的回调（进入引擎）
-//
-// 时序（非降级）：按住 1.25s 完成 → 序章 0.2s 纯淡出（无位移，位移已去掉）→
-//                 dispose 清理 DOM → 调用 onEnter()，把"按住 → 黑场 → 进入引擎"串起来
+//   - onEnter   黑场结束帧调用（进入引擎，bootTimeline 由 main.js 负责）
+//   - 月球 = WebGL 真球体网格（2026-08-11 起无降级路径：本 demo 全程要求 WebGL2，
+//     不支持即白屏，见 main.js）
 // ============================================================
 import gsap from 'gsap'
+import * as THREE from 'three'
 import { createHoldButton } from './hold.js'
-import { isReducedMotion } from './utils.js'
 
-export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
-  // ---------- 1. 创建 DOM（类名契约与 style.css 一致） ----------
-  // 文案演出化调整（U1）：按演出基线重写 —— 去演示腔/卖点罗列腔，
-  // 用观众"按下回车、屏幕卡住"的亲身体验作钩子，悬念由标题承担，
-  // 信息量收敛（正文段落 7 → 4，聊天窗/流水线/点题保留），让观众更快到达"按住"互动
+// 规格 §1 时间轴常量（秒）
+const T_REVEAL = 0.15 // 揭示拍（退场 0~0.15s）
+const T_BLACKOUT = 0.15 // 黑场（退场 0.15~0.30s；层交换窗口）
+const T_PAUSE = 0.08 // 停顿 80ms 真空（0.9~0.98s）
+const T_READY = 0.9 + T_PAUSE // 可走时刻（0.98s）
+const HOLD_SECONDS = 1.25 // 按住时长（规格 §5 鼠标/触屏通道）
+
+// 报告条目（2026-08-11 主人逐条裁决终稿，六条）：
+//   首行 = 特殊条目「38% 的摩擦，同一个原因」—— 数值取主人本机真实月报校准
+//   （摩擦分布 24/63 ≈ 38%，同因集中于带 bug 代码）；悬置光标，裸奔无标签；
+//   末条 = Edit 工具调用（真实月报 637 次 → 600+），右缘裁切 + 省略号，
+//   与首行同构的「原因」悬念首尾呼应；合成注记已按主人裁决移除
+const REPORT_LINES = [
+  '38% 的摩擦，同一个原因',
+  '10 场会话，8 场在修 bug',
+  '4 小时的会话，最长的一次',
+  '3 场对话，同时开着',
+  '23 个话题，一半绕不开…',
+  '600+ 次 Edit 工具调用，背后原因是…',
+]
+const REPORT_OPACITY = [1, 0.78, 0.6, 0.44, 0.3, 0.18] // 透明度渐进（首行 100% → 末行 18%；
+// 步长递减的收敛曲线：前几档快、末档沉进背景，首末差 0.82 保证阶梯一眼可见）
+
+// 星点布局：固定种子 LCG 伪随机（每次加载一致，可截图核验；数量见规格文档
+// PROLOGUE-REDESIGN.md §4 —— 2026-08-11 翻倍：星点 160 + 心跳星 10）
+let _seed = 42
+const rnd = () => ((_seed = (_seed * 1664525 + 1013904223) % 4294967296) / 4294967296)
+
+// 三维月球（2026-08-11：WebGL 真·球体网格，替代 2D canvas 球面投影）：
+//   结构 = tilt 组（斜轴：右上北极 → 左下南极，23.4°，一个 rotation 完事）
+//          ⊃ moon 网格（绕自身 Y = 斜轴自转，60s/圈，时间驱动帧率无关）
+//   贴图 = 本地资产 public/moon.jpg（无网络依赖、无降级路径）；
+//   mipmap 自动生成（缩小不噪）+ antialias + GPU 渲染，全部渲染器免费提供。
+//   返回 stop()：dispose 清理 GL 资源（含 forceContextLoss 确定性释放）并移除 canvas
+function createMoonMesh(container, root) {
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.setSize(200, 200) // = CSS clamp 上限：DPR2 下缓冲 400px = 显示设备像素，零过绘
+  renderer.domElement.style.width = '100%' // 覆盖 three 内联尺寸：CSS clamp(120-200px) 缩放
+  renderer.domElement.style.height = '100%'
+  container.replaceChildren(renderer.domElement)
+
+  const scene = new THREE.Scene()
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 10)
+  camera.position.set(0, 0, 2.85) // 球径 2 在 FOV40 下占满 ~96% 高度（贴缘不留空隙）
+
+  const tilt = new THREE.Group()
+  tilt.rotation.z = (-23.4 * Math.PI) / 180 // 局部 +Y（北极）映射到屏幕右上
+  scene.add(tilt)
+
+  const geo = new THREE.SphereGeometry(1, 32, 32) // ≤200px 球：32 段与 96 段视觉无差，顶点省 9 倍
+  const mat = new THREE.MeshPhongMaterial({ color: 0x9a9a9a, shininess: 2 })
+  const moon = new THREE.Mesh(geo, mat)
+  tilt.add(moon)
+
+  // 贴图本地资产（无失败路径）：纹理异步到达后覆盖灰底；disposed 守卫防
+  // 卸载后回调给已释放材质赋值（本地贴图 <50ms 到达，实际几乎不可能触发）
+  let disposed = false
+  new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'moon.jpg', (tex) => {
+    if (disposed) return
+    tex.colorSpace = THREE.SRGBColorSpace
+    mat.map = tex
+    mat.color.set(0xffffff)
+    mat.needsUpdate = true
+  })
+
+  const light = new THREE.DirectionalLight(0xffffff, 1.3)
+  light.position.set(0.45, -0.4, 0.8) // 左上光源（与 canvas 版一致的屏面方向）
+  scene.add(light)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.35))
+
+  let skipFrame = false // 隔帧渲染：60s/圈 = 0.1°/帧亚像素位移，30fps 视觉无损
+  renderer.setAnimationLoop((t) => {
+    if (root.classList.contains('paused')) return // 80ms 真空：冻结帧
+    skipFrame = !skipFrame
+    if (skipFrame) return
+    moon.rotation.y = (t / 60000) * Math.PI * 2 // 60s/圈
+    renderer.render(scene, camera)
+  })
+
+  return () => {
+    disposed = true
+    renderer.setAnimationLoop(null)
+    geo.dispose()
+    mat.dispose()
+    mat.map?.dispose()
+    renderer.dispose()
+    renderer.forceContextLoss() // three 的 dispose 不释放 context，显式丢弃防反复进序章耗尽
+    renderer.domElement.remove()
+  }
+}
+
+export function mountPrologue({ uiEl, onEnter = null }) {
+
+  // ---------- 1. 创建 DOM（八块文案，2026-08-11 主人逐条裁决终稿） ----------
   const root = document.createElement('div')
   root.className = 'prologue'
   root.innerHTML = `
-    <!-- 标题两行结构（字即图形）：行1 /insights 命令本身做成超大 display 图形
-         （Playfair Display 900 斜体，参照零大学衬线大字张力）；
-         行2 中文副题思源宋体 Heavy（报告/档案感，呼应"生成 HTML 报告"母题）。
-         冒号为排版连接符，由两行层级取代；逐字动画仍按 DOM 顺序（先命令后副题） -->
     <h1 class="prologue-title">
+      <!-- 门牌：/insights 字即图形（暗着，通电才亮）；副题 = 门牌副文 -->
       <span class="title-display">/<span class="hl">insights</span></span>
-      <span class="title-cn">回车之后，发生了什么？</span>
+      <span class="title-cn">这个月，你都和它说了什么？</span>
     </h1>
-    <div class="prologue-body">
-      <!-- 钩子（演出化调整）：用观众自己的亲身体验开场 —— 按下回车、屏幕卡住、
-           只剩 analyzing 在转；"你"字开头把观众拉回自己的经历，不介绍 /insights 是什么 -->
-      <p>你也遇到过吧：按下回车，屏幕卡住几十秒 ——<br>只剩一行字在转：analyzing your sessions…</p>
-      <p class="body-lead">几十秒后，聊天窗弹出一个链接：</p>
-      <!-- 聊天窗输出示例：黑盒的"盒"（两行英文 + file:// 链接，文本锚定知识页话术原文，
-           非虚构；等宽字体 = 数据与终端层，聊天窗是它天然场景） -->
-      <div class="prologue-chat" aria-label="聊天窗输出示例">
-        <p>Your shareable insights report is ready:</p>
-        <p class="chat-file">file:///Users/you/.claude/usage-data/report.html</p>
-        <p>Want to dig into any section or try one of the suggestions?</p>
-      </div>
-      <!-- 全剧地图（演出化调整）：流水线环节保留，措辞是"故事预告"不是"功能列表" -->
-      <p class="body-detail">这份报告不会凭空出现 —— 那几十秒里，一条流水线在暗中开工：</p>
-      <div class="pipeline" aria-label="报告引擎流水线六个环节">
-        <span>扫盘</span><i class="pipe-arrow">→</i><span>缓存</span><i class="pipe-arrow">→</i><span>压缩</span><i class="pipe-arrow">→</i><span>打标签</span><i class="pipe-arrow">→</i><span>写七章</span><i class="pipe-arrow">→</i><span>合成总览</span>
-      </div>
-      <!-- 点题（演出化调整）：悬念已由标题"回车之后，发生了什么？"抛出，
-           收尾落在演出承诺上 —— 这场演出就是那段没人看见的时间。
-           分层字阶契约（沿用原结构，style.css .prologue-* 段定义）：
-           无类 p 默认字阶（钩子）> body-lead 黑体 700（引导）> body-detail dim（展开）
-           > pipeline 青色箭头 > body-theme 思源宋体 900（点题） -->
-      <p class="body-theme">这场演出，就是那段没人看见的时间。</p>
+    <!-- 钩子：<br> 强制两行（反转节奏靠两行的停顿感，禁宽度自然折行）；
+         「点评你」三字青色高亮 + 加大（2026-08-11 主人裁决：蓝色与放大从「你」
+         扩到整组动词，第一眼命中「关于你」锚点） -->
+    <div class="prologue-hook">你每天指挥它干活。<br>今天轮到它<span class="hl-you">点评你</span>。</div>
+    <!-- 报告条目块：6 条展品（首行 = 特殊条目带悬置光标，
+         末条右缘裁切 + 省略号；透明度渐进由下方 JS 内联写入。
+         私有标记行与合成注记已按 2026-08-11 主人裁决移除） -->
+    <div class="prologue-report" aria-label="你的会话报告条目（合成示例数据）">
+      ${REPORT_LINES.map(
+        (t, i) =>
+          `<div class="report-line${i === REPORT_LINES.length - 1 ? ' is-cut' : ''}">${t}${
+            i === 0 ? '<span class="line-cursor">▌</span>' : ''
+          }</div>`
+      ).join('')}
+      <!-- 生成过程行：并入报告卡（2026-08-11 布局重构「展品即主角」——
+           报告卡 = 完整展品：条目区 + 分隔线 + 生成过程单句） -->
+      <div class="prologue-steps" aria-label="报告生成过程">读你一个月的会话记录，写成七章，归纳成一份 HTML 报告。</div>
     </div>
-    <p class="prologue-source">基于 @cometix/claude-code 2.1.209 静态源码分析<br>配套知识页：<a class="prologue-link" href="../../analysis/mechanisms/claude-code-insights-slash-command.md" target="_blank" rel="noopener">机制 · 命令全程解析</a> · <a class="prologue-link" href="../../analysis/concepts/claude-code-insights-prompts.md" target="_blank" rel="noopener">概念 · 内嵌提示词全文</a></p>
-    ${
-      degraded
-        ? `<p class="degraded-note">当前浏览器不支持 WebGL2 —— 3D 演示不可用，以上为静态说明。</p>`
-        : `<div class="prologue-hold">
+    <!-- 点题句：暗态在场（停顿必须有凝视对象），揭示时琥珀通电 -->
+    <p class="prologue-theme">报告是它写的。句句说的是你。</p>
+    <!-- 来源行（展签）：压一行贴右，锚点契约不可删字 -->
+    <p class="prologue-source">基于 @cometix/claude-code 2.1.209 静态源码分析 · 配套知识页：<a class="prologue-link" href="../../analysis/mechanisms/claude-code-insights-slash-command.md" target="_blank" rel="noopener">机制 · 命令全程解析</a> · <a class="prologue-link" href="../../analysis/concepts/claude-code-insights-prompts.md" target="_blank" rel="noopener">概念 · 内嵌提示词全文</a></p>
+    <div class="prologue-hold">
+      <span class="hold-label hold-label-l"><span class="hold-label-inner">按紧它，别松手</span></span>
       <div class="hold-hit">
         <svg class="hold-ring" viewBox="0 0 100 100" aria-hidden="true">
           <circle class="hold-ring-base" cx="50" cy="50" r="46"/>
           <circle class="hold-ring-progress" cx="50" cy="50" r="46"/>
         </svg>
-        <span class="hold-core">/</span>
+        <span class="hold-core">/insights</span>
       </div>
-      <!-- 引导句口语化（演出化调整）：呼应点题"那段没人看见的时间"，
-           按住 = 回到那几十秒；提示按 UI 说话（圆环转满）而非"模拟运行"腔 -->
-      <div class="hold-label">按住，回到那几十秒</div>
-      <p class="hold-hint">别松手，等圆环转满。</p>
-    </div>`
-    }
+      <span class="hold-label hold-label-r"><span class="hold-label-inner">等它转满</span></span>
+    </div>
   `
   uiEl.appendChild(root)
 
-  // ---------- 1.5 背景视差层（星点/微光独立层，随指针微移） ----------
-  // 参照零站点 stage1Parallax：背景位移制造景深感；dispose 时清理监听
+  // ---------- 1.5 背景视差层（星点/心跳星生成 + 指针微移 ±6px，三层只碰背景） ----------
   const fxEl = document.createElement('div')
   fxEl.className = 'prologue-fx'
   root.prepend(fxEl)
+  const frag = document.createDocumentFragment()
+  for (let i = 0; i < 160; i++) {
+    // 星点 160 颗（2026-08-11 翻倍，~25% 为 3px 亮星）：散布全屏，亮度微差
+    const s = document.createElement('span')
+    s.className = 'fx-star'
+    s.style.left = `${(rnd() * 96 + 2).toFixed(1)}%`
+    s.style.top = `${(rnd() * 84 + 4).toFixed(1)}%`
+    s.style.opacity = (0.1 + rnd() * 0.5).toFixed(2)
+    if (rnd() > 0.75) {
+      s.style.width = '3px'
+      s.style.height = '3px'
+    }
+    frag.appendChild(s)
+  }
+  for (let i = 0; i < 10; i++) {
+    // 心跳星 10 颗（2026-08-11 翻倍）：1.5s 周期呼吸，相位错开 = 将死未死的灯丝
+    const h = document.createElement('span')
+    h.className = 'fx-heart'
+    h.style.left = `${(rnd() * 96 + 2).toFixed(1)}%`
+    h.style.top = `${(rnd() * 84 + 4).toFixed(1)}%`
+    h.style.animationDelay = `-${(rnd() * 1.5).toFixed(2)}s`
+    frag.appendChild(h)
+  }
+  fxEl.appendChild(frag)
+
+  // 月球（右上角补白，2026-08-11）：WebGL 真球体网格；挂在 fx 视差层内
+  // → 随指针视差 ±6px 一起微动；贴图本地资产，无降级路径
+  const moon = document.createElement('div')
+  moon.className = 'fx-moon'
+  fxEl.appendChild(moon)
+  const moonStop = createMoonMesh(moon, root)
 
   let parallaxRaf = 0
   let px = 0
@@ -87,7 +204,7 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
   let tx = 0
   let ty = 0
   const onPointerMove = (e) => {
-    // 归一化到 [-1, 1]，位移幅度 ±14px / ±10px
+    // 归一化到 [-1, 1]；视差 ±6px（规格 §4，只碰背景层）
     tx = (e.clientX / window.innerWidth) * 2 - 1
     ty = (e.clientY / window.innerHeight) * 2 - 1
     if (!parallaxRaf) parallaxRaf = requestAnimationFrame(applyParallax)
@@ -96,107 +213,155 @@ export function mountPrologue({ uiEl, degraded = false, onEnter = null }) {
     parallaxRaf = 0
     px += (tx - px) * 0.06 // lerp 平滑跟随
     py += (ty - py) * 0.06
-    fxEl.style.transform = `translate(${px * 14}px, ${py * 10}px)`
+    fxEl.style.transform = `translate(${px * 6}px, ${py * 6}px)`
   }
   window.addEventListener('pointermove', onPointerMove, { passive: true })
 
-  // ---------- 2. 标题逐字包裹（供"逐字浮现"stagger 动画） ----------
-  // 保留 <span class="hl"> 高亮结构，字符拆成 .prologue-char（行内块）便于位移动画
-  const titleEl = root.querySelector('.prologue-title')
+  // ---------- 2. 元素引用与标题逐字包裹（供「逐字锐化」stagger） ----------
+  // 只包 title-display（/insights 字即图形）；副题合拍轻落不拆字
+  const titleEl = root.querySelector('.title-display')
   const titleChars = wrapChars(titleEl)
-
-  // ---------- 3. 入场动画（总时长 ≈1.15s；2026-08-06 减半，原 ≈2.5s） ----------
-  // > p 直选 + chat/pipeline 块：聊天窗与流水线整体作为一块进入
-  // （pipeline 是 div 不是 p，漏掉会导致它不参与隐藏/浮现，动画前就露在屏幕上）
-  const bodyPs = root.querySelectorAll('.prologue-body > p, .prologue-chat, .pipeline')
+  const titleCn = root.querySelector('.title-cn')
+  const hookEl = root.querySelector('.prologue-hook')
+  const reportEl = root.querySelector('.prologue-report')
+  const reportLines = [...root.querySelectorAll('.report-line')]
+  const cursorEl = root.querySelector('.line-cursor')
+  const themeEl = root.querySelector('.prologue-theme')
   const sourceEl = root.querySelector('.prologue-source')
-  const tailEls = degraded
-    ? [sourceEl, root.querySelector('.degraded-note')]
-    : [sourceEl, root.querySelector('.prologue-hold')]
+  const labelEls = [...root.querySelectorAll('.hold-label')]
+  const holdEl = root.querySelector('.prologue-hold')
 
-  // 先整体置为不可见，再按节奏依次进入（避免首帧闪现）
-  // 标题带模糊锐化入场（参照零站点"文字随进入视野逐渐锐化"的对焦手法）
-  // 注意：tailEls 含按住按钮与知识页链接（pointer-events: auto），
-  // 隐藏期间必须同步禁点，否则观众会在"看不见按钮"时误触开始按住；
-  // .prologue-link 有自己的 CSS pointer-events: auto（覆盖父级继承），必须直接设内联样式
-  gsap.set(titleChars, { opacity: 0, y: 24, filter: 'blur(10px)' })
-  gsap.set(bodyPs, { opacity: 0, y: 14 })
-  gsap.set(tailEls, { opacity: 0, y: 12, pointerEvents: 'none' })
+  // 条目透明度渐进（首行 100% → 末行 18%）：内联写入（CSS 无状态，
+  // 揭示时「其余条目压暗 50%」在此基线上减半）
+  reportLines.forEach((l, i) => (l.style.opacity = String(REPORT_OPACITY[i])))
+
+  // ---------- 3. 入场动画（0~0.9s 一次摆好；规格 §1） ----------
+  // 圆环是常量（全程在场、不参与入场动画）→ 不入组；
+  // 点题句暗态在场（opacity 0.2，CSS 静态）→ 不入组
+  const fadeIns = [titleCn, hookEl, sourceEl, ...labelEls] // 尾部轻落组（生成过程随报告卡整块落位）
+  gsap.set(titleChars, { opacity: 0, y: 20, filter: 'blur(10px)' })
+  gsap.set(fadeIns, { opacity: 0, y: 12 })
+  gsap.set(reportEl, { opacity: 0, y: 4 }) // 条目块整块：4px 盖章位移
+  // 入场隐藏期间链接禁点（.prologue-link 的 CSS pointer-events: auto 覆盖父级继承，
+  // 必须直接设内联样式；恢复时机 = 尾部轻落完成）
   gsap.set(root.querySelectorAll('.prologue-link'), { pointerEvents: 'none' })
-
-  // 入场动画收尾后恢复按住按钮与链接的可交互性（stagger 全部完成时触发）；
-  // 同时清掉 gsap.set 写下的内联样式（tailEls 的 pointerEvents: none）
   function restorePointer() {
-    root.querySelectorAll('.prologue-hold, .prologue-link, .prologue-source').forEach((el) => {
+    root.querySelectorAll('.prologue-link').forEach((el) => {
       el.style.pointerEvents = ''
     })
   }
 
-  // 尊重动效偏好：reduce 时跳过入场动画，直接呈现全部内容（JS 侧同样生效）
-  const reducedMotion = isReducedMotion()
-  let entrance = null
-  if (reducedMotion) {
-    gsap.set(titleChars, { opacity: 1, y: 0, filter: 'blur(0px)' })
-    gsap.set(bodyPs, { opacity: 1, y: 0 })
-    gsap.set(tailEls, { opacity: 1, y: 0 })
-    restorePointer()
-  } else {
-    entrance = gsap.timeline({ defaults: { ease: 'power2.out' } })
-    entrance
-      // 标题逐字（模糊锐化）。clearProps 清除动画残留的内联 filter/transform：
-      // 子元素带非 none 的 filter 会创建合成层，父级 background-clip: text 的
-      // 文字裁剪因此失效 → 整行渐变标题不可见（实测 blur(0px) 残留导致）
-      // 2026-08-06 时长/stagger 全减半（0.45/0.02 → 0.225/0.01），文字出现加快一倍
-      .to(titleChars, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.225, stagger: 0.01, clearProps: 'filter,transform' })
-      .to(bodyPs, { opacity: 1, y: 0, duration: 0.2, stagger: 0.15 }, '+=0.05') // 正文各段（钩子/引导/聊天窗/流水线/点题）逐个依次浮现
-      .to(
-        tailEls,
-        { opacity: 1, y: 0, duration: 0.175, stagger: 0.05, onComplete: restorePointer },
-        '+=0.05'
-      ) // 来源/按住区收尾（完成后恢复交互）
-  }
+  const entrance = gsap.timeline({ defaults: { ease: 'power2.out' } })
+  entrance
+    // 标题逐字锐化：单字符 0.35s、stagger 0.05s、保持暗（opacity 0.4 = 还没通电的灯）
+    .to(
+      titleChars,
+      { opacity: 0.4, y: 0, filter: 'blur(0px)', duration: 0.35, stagger: 0.05, clearProps: 'filter,transform' },
+      0
+    )
+    // 副题+钩子合拍轻落（同一拍，不轮流登场）
+    .to([titleCn, hookEl], { opacity: 1, y: 0, duration: 0.2 }, 0.55)
+    // 报告条目块整块落位（≤400ms，禁逐字弹入），之后死住
+    .to(reportEl, { opacity: 1, y: 0, duration: 0.15 }, 0.72)
+    // 尾部轻落：来源/两侧标注（完成后恢复链接可点）
+    .to(
+      [sourceEl, ...labelEls],
+      { opacity: 1, y: 0, duration: 0.1, stagger: 0.03, onComplete: restorePointer },
+      0.8
+    )
+    // 停顿 80ms 真空：心跳星/圆环全停一拍（规格 §1/§8.6；0.9 = T_READY - T_PAUSE）
+    .call(() => root.classList.add('paused'), [], T_READY - T_PAUSE)
+    // 可走：圆环恢复交互（0.98s）
+    .call(() => {
+      root.classList.remove('paused')
+      hold.setEnabled(true)
+    }, [], T_READY)
 
-  // ---------- 4. 按住交互（仅非降级） ----------
-  let hold = null // createHoldButton 的返回（可能带 dispose）
+  // ---------- 4. 按住交互 ----------
+  // const hold：入场 timeline 的 0.98s call 引用它，闭包在赋值后才执行（无 TDZ）
+  const hold = createHoldButton({
+    el: holdEl,
+    duration: HOLD_SECONDS, // 按住 1.25s（规格 §5 鼠标/触屏通道）
+    // 0.98s 可走前忽略一切输入（摆好期间禁点防误触，
+    // setEnabled(true) 由入场 timeline 的 0.98s call 执行）
+    enabled: false,
+    onComplete: () => {
+      if (done) return
+      done = true
+      runExit()
+    },
+  })
   let done = false // 防重复触发
-  let exitTween = null // 退场动画引用（dispose 时释放）
+  let exitTween = null // 黑场动画引用（dispose 时释放）
 
-  if (!degraded) {
-    const holdEl = root.querySelector('.prologue-hold')
-    hold = createHoldButton({
-      el: holdEl,
-      duration: 1.25, // 按住时长：模拟"引擎运转需要一点时间"（2026-08-06 减半，加快进入 S1）
-      // onProgress 不传：进度环由 hold.js 内部驱动
-      onComplete: () => {
-        if (done) return
-        done = true
-        // 按住完成 → 序章退场：0.2s 纯淡出（退场期间禁点，防二次触发；
-        // 无位移 —— 上移+加速曲线会形成"抽一下"的干扰，黑场停顿由 main.js 在
-        // 场景侧接管；时长 2026-08-06 减半加快进入 S1）
-        holdEl.style.pointerEvents = 'none'
-        exitTween = gsap.to(root, {
-          opacity: 0,
-          duration: reducedMotion ? 0.01 : 0.2, // 2026-08-06 减半（0.4 → 0.2），加快进入 S1
-          ease: 'power2.in',
-          onComplete: () => {
-            dispose()
-            // 退场动画结束才进入引擎
-            if (onEnter) onEnter()
+  // ---------- 5. 退场：揭示 0.15s → 黑场 0.15s（规格 §1/§6） ----------
+  // 揭示拍 = 同一拍三件事（被看见的揭示瞬间）：
+  //   首行聚焦（青色辉光 + 其余条目压暗 50% + 光标消失）
+  //   ‖ 点题句琥珀通电（全页唯一一次琥珀，.theme-live 类切换）
+  //   ‖ 标题字重通电（可变字重 700→900 + 亮度 40→75%）
+  // 黑场：全页 opacity→0（power2.in），fx 留 12% 极弱星点 = 面板落点坐标；
+  //   结束帧 = 层交换窗口（2D 卸载 + 3D 接管同一帧）→ S1 面板落下
+  function runExit() {
+    const firstLine = reportLines[0]
+    const restLines = reportLines.slice(1)
+    const wgt = { w: 700 } // 标题字重代理（gsap 不能直接补间 font-variation-settings 字符串）
+    const reveal = gsap.timeline({ defaults: { duration: T_REVEAL, ease: 'power2.out' } })
+    reveal
+      // 首行聚焦：青色辉光
+      .to(firstLine, { textShadow: '0 0 16px rgba(125,211,252,0.85), 0 0 40px rgba(59,108,246,0.45)' }, 0)
+      // 其余条目压暗 50%（在渐进基线上减半）
+      .to(restLines, { opacity: (i) => REPORT_OPACITY[i + 1] * 0.5 }, 0)
+      // 光标消失
+      .set(cursorEl, { opacity: 0 }, 0)
+      // 点题句琥珀通电（亮度 + 琥珀色/光晕由 .theme-live 的 CSS transition 接管）
+      .to(themeEl, { opacity: 1 }, 0)
+      .call(() => themeEl.classList.add('theme-live'), [], 0)
+      // 标题通电：亮度 40→75% + 字重 700→900 + 光晕全开（「被看见的光有重量」）
+      .to(titleChars, { opacity: 0.75 }, 0)
+      .call(() => titleEl.classList.add('title-live'), [], 0)
+      .to(
+        wgt,
+        {
+          w: 900,
+          duration: T_REVEAL,
+          onUpdate: () => {
+            titleEl.style.fontVariationSettings = `'wght' ${Math.round(wgt.w)}`
           },
-        })
-      },
-    })
+        },
+        0
+      )
+      // 颗粒 300ms 脉冲（一次性 CSS 动画类）
+      .call(() => root.classList.add('grain-pulse'), [], 0)
+      // 黑场（揭示完成后开始）：
+      .call(
+        () => {
+          exitTween = gsap.to(root, {
+            opacity: 0,
+            duration: T_BLACKOUT,
+            ease: 'power2.in',
+            onComplete: () => {
+              dispose() // 2D 卸载
+              if (onEnter) onEnter() // 3D 接管（同一帧）→ S1 面板落下（硬切）
+            },
+          })
+          // 留极弱星点 = 面板落点坐标（fx 不停在 0，黑场期间仍可见微光）
+          gsap.to(fxEl, { opacity: 0.12, duration: T_BLACKOUT, ease: 'power2.in' })
+        },
+        [],
+        T_REVEAL
+      )
   }
 
-  // ---------- 5. 清理：移除 DOM 并释放所有监听/动画 ----------
+  // ---------- 6. 清理：移除 DOM 并释放所有监听/动画 ----------
   let disposed = false
   function dispose() {
     if (disposed) return
     disposed = true
-    entrance?.kill() // 入场动画（reduce 模式下为 null）
-    exitTween?.kill() // 退场动画
-    hold?.dispose?.() // 按住组件自清理（若有）
+    entrance?.kill() // 入场动画
+    exitTween?.kill() // 黑场动画
+    hold.dispose() // 按住组件自清理
     if (parallaxRaf) cancelAnimationFrame(parallaxRaf) // 视差 rAF
+    moonStop?.() // 月球自转 rAF
     window.removeEventListener('pointermove', onPointerMove) // 视差监听
     root.remove() // 从 uiEl 移除 .prologue 节点
   }

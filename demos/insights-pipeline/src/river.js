@@ -20,7 +20,7 @@
 //   预分配固定全量、不用 drawRange:第一幕粒子数恒定(简报可微调条款,无动态增减需求)
 
 import * as THREE from 'three'
-import { makeSoftTexture, SOFT_POINT_FRAG, isReducedMotion } from './utils.js'
+import { makeSoftTexture, SOFT_POINT_FRAG } from './utils.js'
 
 // ---------- 河色(简报 §2.3 river 色阶) ----------
 // 导出供场景模块引用（s2 星云转化目标色 / s1 源头 ember 白）——
@@ -314,8 +314,6 @@ function gaussRandom() {
 }
 
 export function createRiver({ scene, branchShare = 0.73 } = {}) {
-  const reducedMotion = isReducedMotion()
-
   // ---------- 粒子 buffer:预分配全量(层分区生成) ----------
   const n = TOTAL
   const aPathT = new Float32Array(n)
@@ -450,9 +448,7 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
     // 信息量注入(2026-08-05,S1 拍4 独用):记录注入时刻 + 旧宽快照 → shader 前锋
     // 从源头顺流传播。无参:目标宽由场景侧补间经 setInfoVolume 逐帧送达,不重复
     // 写终值。S2/S3 的持续 setInfoVolume 不调本方法,前锋永不误触发。
-    // reduce 双保险:uTime 冻结时记录冻结时刻会让前锋永远停在源头(必死),故忽略
     injectInfoVolume() {
-      if (reducedMotion) return
       this.uniforms.uRiverWidthOld.value = this.uniforms.uRiverWidth.value
       this.uniforms.uWidthInjTime.value = this.uniforms.uTime.value
     },
@@ -494,9 +490,9 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
       pulse = Math.min(1, pulse + strength)
     },
 
-    // 每帧:时间推进(流动/呼吸/生死);reduced-motion 下粒子静止(简报 §5)
+    // 每帧:时间推进(流动/呼吸/生死)
     update(t, dt) {
-      if (!reducedMotion) uniforms.uTime.value += dt
+      uniforms.uTime.value += dt
       pulse *= Math.exp(-3 * dt) // ≈0.5s 衰减窗口
       uniforms.uPulse.value = pulse
       biasV += (biasT - biasV) * 0.05 // 隐藏分平滑跟随(简报 §3.3.6)

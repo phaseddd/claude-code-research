@@ -10,8 +10,6 @@
 // 本模块只负责"输入 → 目标值 → 平滑位置"，不知道 segment 概念；
 // 分段与生命周期由 timeline.js 消费 onFrame 驱动。
 
-import { isReducedMotion } from './utils.js'
-
 const WHEEL_FACTOR = 140 // wheel 力度系数（2026-08-06 主人需求连续提速：35 → 70 → 140；快甩单帧 clamp 500px 时 ≈82vh，仍不足一站 180vh）
 const WHEEL_CLAMP = 500 // 单帧 wheel 增量上限（px；对齐零站点 ±500 clamp，防甩动滚轮单帧跳多段）
 const KEY_STEP = 0.9 // 方向键单步（vh）
@@ -29,9 +27,6 @@ const LERP_RATE = 5 // 帧率无关 lerp 速率（60fps 下每帧 ≈8% 收敛�
  * @returns {{setTarget: Function, snapTo: Function, dispose: Function}}
  */
 export function createScroll({ max = 0, onFrame = null, wheelFactor = WHEEL_FACTOR } = {}) {
-  // 尊重动效偏好：reduce 时滚动即时跟随（去掉 lerp 平滑与自动过渡的黏滞感）
-  const reducedMotion = isReducedMotion()
-
   let target = 0 // 目标滚动位置（用户意图 / gate 自动推进）
   let current = 0 // 实际滚动位置（lerp 平滑后，驱动段内 scrub）
   let rafId = 0
@@ -55,13 +50,9 @@ export function createScroll({ max = 0, onFrame = null, wheelFactor = WHEEL_FACT
   const tick = (now) => {
     const dt = Math.min(0.1, (now - lastTime) / 1000) // clamp：tab 切回时 dt 过大
     lastTime = now
-    if (reducedMotion) {
-      current = target // reduce：即时跟随
-    } else {
-      const k = 1 - Math.exp(-LERP_RATE * dt)
-      current += (target - current) * k
-      if (Math.abs(target - current) < SNAP_EPS) current = target
-    }
+    const k = 1 - Math.exp(-LERP_RATE * dt)
+    current += (target - current) * k
+    if (Math.abs(target - current) < SNAP_EPS) current = target
     onFrame?.(current, target, dt)
     rafId = requestAnimationFrame(tick)
   }

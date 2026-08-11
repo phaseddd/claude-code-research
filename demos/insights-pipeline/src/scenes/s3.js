@@ -53,7 +53,7 @@ import gsap from 'gsap'
 import { RIVER } from '../river.js'
 import { STATS } from '../data/sessions.js'
 import { COLORS } from '../theme.js'
-import { easeInOutQuad, clamp01, scrubFade, rampCamera, isReducedMotion } from '../utils.js'
+import { easeInOutQuad, clamp01, scrubFade, rampCamera } from '../utils.js'
 
 // ---------- 场景常量（简报 §2.3 / §4.3） ----------
 const META_C = COLORS.mono // meta 青（theme.js 单一来源）
@@ -83,7 +83,6 @@ const LOOK_END = new THREE.Vector3(0, 0.5, -13)
 // river 为必传参数（main.js 引擎级创建共享河，本站只用不建不毁）
 export function createS3({ scene, camera, uiEl, river }) {
   let disposed = false
-  const reducedMotion = isReducedMotion()
 
   // ---------- 缓存盒位置（与 shader 内路径采样同源，river.js RIVER 对象） ----------
   const metaPos = RIVER.getBranchEnd('meta') // (2.7, 0.2, -23)
@@ -200,18 +199,6 @@ export function createS3({ scene, camera, uiEl, river }) {
   let started = false
 
   function runBeats() {
-    if (reducedMotion) {
-      // 节拍直接呈现（简报 §5）：全部状态落定
-      river.setBranchMix(1)
-      river.setAbsorbers(metaPos, facetPos, ABSORB_R, true)
-      river.setFlow('s3split')
-      setMetaIntensity(1)
-      setFacetFlash(0)
-      river.setInfoVolume(STATS.metaInfo + STATS.facetInfo * 0.7)
-      labelMeta.style.opacity = '1'
-      labelFacet.style.opacity = '1'
-      return
-    }
     const mix = { v: 0 } // 分叉 morph
     const mi = { v: 0 } // meta 盒 intensity
     const ff = { v: 0 } // facet 确认闪

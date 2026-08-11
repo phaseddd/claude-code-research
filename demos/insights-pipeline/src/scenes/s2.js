@@ -28,7 +28,7 @@ import * as THREE from 'three'
 import gsap from 'gsap'
 import { RIVER, COL as RIVER_COL, RIVER_SPLIT } from '../river.js'
 import { STATS, starBrightness } from '../data/sessions.js'
-import { makeSoftTexture, SOFT_POINT_FRAG, easeInOutQuad, scrubFade, rampCamera, isReducedMotion } from '../utils.js'
+import { makeSoftTexture, SOFT_POINT_FRAG, easeInOutQuad, scrubFade, rampCamera } from '../utils.js'
 
 // ---------- 星云色(简报 §2.3 river 色阶 + §4.2 新旧梯度) ----------
 const COL = {
@@ -243,7 +243,6 @@ export const S2_LOOK_ENTER = RIVER.getMidPoint() // 星云中心 = 河主干 t=0
 const S2_CAM_END = new THREE.Vector3(0, 0.35, 3.5) // scrub 终点（平移单调推进，lookAt 恒星云）
 
 export function createS2({ scene, camera, uiEl, river }) {
-  const reducedMotion = isReducedMotion()
   const nebulaCenter = S2_LOOK_ENTER
 
   // ---------- 星点数据:亮星(数据即物体)+ 中景 + 远景 + 元会话星 ----------
@@ -448,18 +447,6 @@ export function createS2({ scene, camera, uiEl, river }) {
   let tl = null
 
   function runBeats() {
-    if (reducedMotion) {
-      // reduced-motion:节拍直接呈现(简报 §5)——静止画面直达三拍终态
-      uniforms.uReveal.value = 1
-      uniforms.uExtract.value = 1
-      uniforms.uConvert.value = 1
-      uniforms.uDim.value = 1
-      group.scale.setScalar(1)
-      scanPlane.visible = false
-      river.setInfoVolume(STATS.totalInfo)
-      river.setFlow('s2')
-      return
-    }
     tl = gsap.timeline({ defaults: { ease: 'power2.out' } })
     tl
       // 拍1 星云展开:星依次淡入散开 + 星云从中心胀开
@@ -528,9 +515,9 @@ export function createS2({ scene, camera, uiEl, river }) {
 
     update(t, dt) {
       if (!entered) return
-      // 星云闪烁/微漂/下坠由 shader uTime 驱动;reduced-motion 下静止(简报 §5)
+      // 星云闪烁/微漂/下坠由 shader uTime 驱动
       // 共享河每帧推进由 main.js 统一执行（引擎级资产，本站不转发）
-      if (!reducedMotion) uniforms.uTime.value += dt
+      uniforms.uTime.value += dt
     },
 
     dispose() {

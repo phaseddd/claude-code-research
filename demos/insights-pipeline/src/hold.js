@@ -1,7 +1,13 @@
 // hold.js —— TAP HOLD 按住交互组件
 // 长按 .hold-hit 填充 SVG 进度环，按满 duration 秒触发 onComplete；
-// 松开后 500ms 内再按住可续接进度，超时则进度归零并触发 onCancel。
+// 松开后 500ms 内再按住可续接进度，超时则进度归零。
 // 参照零大学 Tg 类机制简化：回落直接归零，不做衰减动画（KISS）。
+//
+// v2 扩展（序章规格 PROLOGUE-REDESIGN.md §5 交互通道）：
+//   enabled=false  忽略一切输入（序章 0.98s「可走」前禁点），setEnabled() 开启
+// 2026-08-11：键盘通道（Tab→Enter）与降级通道（instant 点击即走）整体移除 ——
+//   主人裁决：项目不需要键盘，且 tabindex 移除 = 圆环不可聚焦，
+//   同时根治焦点指示画方框的问题
 
 import { clamp01 } from './utils.js'
 
@@ -11,20 +17,19 @@ const RESUME_WINDOW = 500 // 松开后允许续按的窗口（ms）
 export function createHoldButton({
   el,
   duration = 2.5,
-  onProgress = null,
+  enabled = true, // false 时忽略一切输入（序章摆好期间禁点）
   onComplete = null,
-  onCancel = null,
 }) {
   const hitEl = el.querySelector('.hold-hit')
   // 进度弧（.hold-ring-progress）；底环 .hold-ring-base 是常驻引导环，不动它
   const ringEl = el.querySelector('.hold-ring-progress')
-  const labelEl = el.querySelector('.hold-label')
 
-  // 键盘/读屏可达：按钮语义 + 焦点 + 完成播报（.hold-hit 是 div，默认可达性为零）
+  // 按钮语义 + 完成播报（.hold-hit 是 div，默认可达性为零）。
+  // 2026-08-11：无 tabindex（不可聚焦）—— 键盘通道已整体移除，
+  // 且焦点落不到圆环 = 任何来源都画不出焦点方框
   if (hitEl) {
     hitEl.setAttribute('role', 'button')
-    hitEl.setAttribute('tabindex', '0')
-    hitEl.setAttribute('aria-label', '按住启动 /insights 演示')
+    hitEl.setAttribute('aria-label', '进入演示')
     hitEl.setAttribute('aria-live', 'polite')
   }
 
@@ -56,9 +61,6 @@ export function createHoldButton({
     }
     hitEl.removeEventListener('pointerdown', onPointerDown)
     hitEl.removeEventListener('lostpointercapture', onLostCapture)
-    hitEl.removeEventListener('keydown', onKeyDown)
-    hitEl.removeEventListener('keyup', onKeyUp)
-    window.removeEventListener('blur', onWindowBlur)
     document.removeEventListener('pointerup', onPointerUp)
     document.removeEventListener('pointercancel', onPointerCancel)
     el.classList.remove('is-dragging')
@@ -76,13 +78,12 @@ export function createHoldButton({
     if (onComplete) onComplete()
   }
 
-  // 续接窗口超时：进度直接归零并触发一次 onCancel
+  // 续接窗口超时：进度直接归零
   const cancelNow = () => {
     if (settled) return
     cancelTimer = null
     progress = 0
     setRing(0)
-    if (onCancel) onCancel()
   }
 
   // 每帧按按下以来经过的时间推进进度；达标即完成
@@ -90,7 +91,6 @@ export function createHoldButton({
     rafId = null
     progress = clamp01((now - downTime) / (duration * 1000))
     setRing(progress)
-    if (onProgress) onProgress(progress)
     if (progress >= 1) {
       finishComplete()
       return
@@ -98,7 +98,7 @@ export function createHoldButton({
     rafId = requestAnimationFrame(tick)
   }
 
-  // 按住开始（pointer 与键盘共用）：记录指针 id、续接、启动推进循环
+  // 按住开始：记录指针 id、续接、启动推进循环
   const startHold = (pointerId) => {
     if (settled || activePointerId !== null) return // 多指保护：只认第一个
     activePointerId = pointerId
@@ -122,6 +122,7 @@ export function createHoldButton({
   }
 
   const onPointerDown = (e) => {
+    if (!enabled || settled) return // 可走前禁点 / 完成后忽略
     e.preventDefault() // 避免触屏长按触发文本选择/系统菜单
     startHold(e.pointerId)
     // 指针 capture：拖出窗口松开也能收到 lostpointercapture 停止推进
@@ -150,40 +151,15 @@ export function createHoldButton({
     stopHold()
   }
 
-  // 键盘可达：Space/Enter 按住推进、松开停止（与 pointer 同一套逻辑）
-  const onKeyDown = (e) => {
-    if (e.key !== ' ' && e.key !== 'Enter') return
-    if (e.repeat) return
-    e.preventDefault()
-    if (activePointerId !== null && activePointerId !== 'keyboard') return // 指针按住中忽略键盘，避免误按干扰
-    startHold('keyboard')
-  }
-
-  const onKeyUp = (e) => {
-    if (e.key !== ' ' && e.key !== 'Enter') return
-    e.preventDefault()
-    if (activePointerId !== 'keyboard') return // 只终止键盘按住（指针按住不受键盘 keyup 影响）
-    stopHold()
-  }
-
-  // 失焦兜底：键盘按住中窗口失焦 → keyup 丢失，进度可能走满自动完成；
-  // blur 时停止推进（500ms 续接窗口内回来再按可续接）
-  const onWindowBlur = () => {
-    if (activePointerId === 'keyboard') stopHold()
-  }
-
   hitEl.addEventListener('pointerdown', onPointerDown)
   hitEl.addEventListener('lostpointercapture', onLostCapture)
-  hitEl.addEventListener('keydown', onKeyDown)
-  hitEl.addEventListener('keyup', onKeyUp)
-  window.addEventListener('blur', onWindowBlur)
   document.addEventListener('pointerup', onPointerUp)
   document.addEventListener('pointercancel', onPointerCancel)
 
   return {
-    // 更新按钮文字（如"按住别松手"→"运行中…"）
-    setLabel(text) {
-      labelEl.textContent = text
+    // 可走开关：false 忽略一切输入，true 恢复（序章 0.98s 摆好完成才放行）
+    setEnabled(v) {
+      enabled = v
     },
     // 销毁：撤销全部监听、取消 rAF，进度环归零
     dispose() {

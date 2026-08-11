@@ -29,6 +29,10 @@
   /* mono 的 RGB 分量:半透明变体统一写 rgb(var(--mono-rgb) / α)（原 rgba(125,211,252,…) 硬编码 62 处） */
   --mono-rgb: 125 211 252;
 
+  /* 琥珀的 RGB 分量:序章揭示瞬间点题句通电光尾唯一使用（可自动核验:
+     琥珀 = #f5b942 = --act3,在序章段只出现于 .theme-live 与其注释） */
+  --act3-rgb: 245 185 66;
+
   /* 暗色文字衬底底色(RGB 分量;HUD 渐暗/节点底/站文案衬底/标签底片共用,
      改主题底色只动这一处 —— 原 rgba(5,7,13,…) 硬编码 5 处) */
   --ink-veil: 5 7 13;
@@ -36,6 +40,9 @@
   /* 站内文案列宽(左仪器柱;S1 面板与 S1/S2/S3 文案同一根左柱,
      原定义在 .s1-scene 作用域内、S2 手抄同式 —— 上移共享,站间改一处全生效) */
   --copy-col: min(520px, 27.5vw, calc(100vw - 48px));
+  /* 左柱左缘（2026-08-11：序章 masthead/卡与 S1~S3 场景共 7 处手抄 6vw，
+     抽变量保「交接同轴」契约——改一处全生效） */
+  --copy-gutter: 6vw;
 
   /* 字体栈变量（原三组栈全文重复 21 处；改字体只动这里） */
   --font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -148,7 +155,9 @@ body:has(.hud[data-act='act3']) {
   pointer-events: none;
 }
 
-/* ---------- 序章 ---------- */
+/* ---------- 序章（v2 规格：docs/PROLOGUE-REDESIGN.md） ----------
+   文案九块布局与 3 秒时间轴见规格；本段只实现视觉，时序由 prologue.js 驱动。
+   展柜三定律：展品亮展厅暗（全页只有一处能亮）/ 展品静观众动（视差只碰背景）/ 展签贴边 */
 
 .prologue {
   position: absolute;
@@ -156,13 +165,17 @@ body:has(.hud[data-act='act3']) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: safe center; /* 内容超高时从顶部排列可滚动；普通 center 把溢出全排起始侧，标题被永久裁切 */
-  padding: 2vh 8vw;
+  justify-content: flex-start; /* 顶锚三区：masthead → 展品卡 → 判决 → 出口（2026-08-11 重构，
+    不再整页居中一坨；出口用 margin-top: auto 吸底） */
+  padding: 0;
   text-align: center;
   pointer-events: auto;
   background: var(--bg);
   /* 小屏竖屏内容可能超高：允许序章内部滚动兜底，避免按钮被裁掉 */
   overflow-y: auto;
+  /* 横轴裁掉：点题句 ::after 颗粒晕（inset -90% 横向扩展）随元素右移会伸出视口，
+     撑出横向滚动条 —— 晕在屏外本就不可见，裁掉无视觉损失（2026-08-11） */
+  overflow-x: hidden;
 }
 
 .prologue > * {
@@ -170,98 +183,148 @@ body:has(.hud[data-act='act3']) {
   z-index: 1;
 }
 
-/* 背景层：星点 + 中心冷蓝微光 + 角落青紫晕（独立层便于鼠标视差位移；
-   参照零站点 stage1Parallax 手法：背景随指针微移制造景深感） */
+/* 背景层：中心冷蓝微光 + 角落青紫晕（独立层便于鼠标视差位移 ±6px，
+   三层只碰背景 —— 展品静观众动；星点/心跳星由 prologue.js 生成
+   .fx-star/.fx-heart 挂在此层） */
 .prologue-fx {
   position: fixed; /* 滚动容器（小屏）内固定于视口，背景不被滚走 */
   inset: -20px; /* 比视口大一圈，给视差位移留余量 */
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(1.5px 1.5px at 18% 26%, rgba(255, 255, 255, 0.5), transparent 2px),
-    radial-gradient(1.5px 1.5px at 72% 64%, rgba(255, 255, 255, 0.32), transparent 2px),
-    radial-gradient(1px 1px at 84% 22%, rgb(var(--mono-rgb) / 0.6), transparent 1.5px),
-    radial-gradient(1px 1px at 30% 74%, rgba(255, 255, 255, 0.28), transparent 1.5px),
-    radial-gradient(1.5px 1.5px at 55% 12%, rgb(var(--mono-rgb) / 0.45), transparent 2px),
     radial-gradient(ellipse 62% 52% at 50% 40%, var(--act1-fog), transparent 72%),
     radial-gradient(ellipse 34% 24% at 80% 16%, var(--act2-fog), transparent 70%);
   transition: transform 0.3s cubic-bezier(0.2, 0.6, 0.3, 1); /* 视差平滑跟随 */
 }
 
-/* 胶片颗粒层（feTurbulence 噪点）：整屏低透明度叠加，破除纯色黑场
-   的"网页感"，参照零站点后处理链里的前景胶片颗粒。
-   动态跳帧（400ms 步进位移）制造老电影颗粒感 —— 静态噪点在暗背景上
-   肉眼几乎不可见，动起来才有"胶片"质感 */
+/* 星点（数量见规格 PROLOGUE-REDESIGN.md §4：160 颗，JS 固定种子序列生成）+
+   心跳星（10 颗，将死未死的灯丝，1.5s 周期呼吸；相位错开由 JS 负 animation-delay 实现） */
+.fx-star {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+}
+
+.fx-heart {
+  position: absolute;
+  width: 1.5px;
+  height: 1.5px;
+  border-radius: 50%;
+  background: #fff;
+  animation: heart-beat 1.5s ease-in-out infinite;
+}
+
+/* 月球（2026-08-11）：WebGL 真球体网格（tilt 斜轴 + 自转见 prologue.js createMoonMesh）。
+   2026-08-11 修黑圈：canvas 时代的 inset 内阴影（伪造体积感）已删 —— 真 3D 光照自带
+   明暗与边缘弧度，内阴影只会把球缘压成黑环；保留外微光晕。
+   挂在 fx 视差层 → 随指针 ±6px 微动；canvas 尺寸由 renderer.setSize + JS 覆盖 100% */
+.fx-moon {
+  position: absolute;
+  top: 7vh;
+  right: 6vw;
+  width: clamp(120px, 15vw, 200px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 42px rgb(var(--mono-rgb) / 0.14);
+  opacity: 0.92;
+}
+
+.fx-moon canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@keyframes heart-beat {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+/* 胶片颗粒层（feTurbulence 噪点）：平时 0.02 冻结（破除纯色黑场的
+   "网页感"但不抢展品），揭示瞬间 300ms 脉冲（.grain-pulse，JS 一次性加类）；
+   聚在点题句周围的局部颗粒由 .prologue-theme::after 承担（见下） */
 .prologue::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  opacity: var(--grain-fx);
+  opacity: 0.02;
   mix-blend-mode: screen; /* screen 对暗底提亮明显，overlay 在纯黑上几乎无效 */
   background-image: var(--grain-uri);
-  animation: grain-shift 0.4s steps(4) infinite;
+  animation: none; /* 冻结：v2 平时无跳帧 */
 }
 
-@keyframes grain-shift {
+.prologue.grain-pulse::after {
+  animation: grain-pulse 0.3s ease-out;
+}
+
+@keyframes grain-pulse {
   0% {
-    background-position: 0 0;
-  }
-  25% {
-    background-position: -20px 12px;
+    opacity: 0.02;
   }
   50% {
-    background-position: 14px -18px;
-  }
-  75% {
-    background-position: -10px -8px;
+    opacity: 0.08;
   }
   100% {
-    background-position: 20px 16px;
+    opacity: 0.02;
   }
 }
 
 .prologue-title {
-  margin-bottom: 0.7vh;
+  /* masthead 左上（2026-08-11 重构：与 S1 左柱同缘 var(--copy-gutter)，交接同轴） */
+  align-self: flex-start;
+  margin: 7vh 0 1.2vh var(--copy-gutter);
+  text-align: left;
 }
 
-/* 行1：/insights 命令图形 —— 高对比衬线斜体（Playfair Display 900），
-   命令本身当超大图形用（零大学"字即图形"的中文语境对应：西文命令走西文 display）。
-   渐变放整行而非字符级：字符级盒会横向裁掉斜体墨迹（i 点右、g 钩左），
-   整行盒只有首尾字符受边缘约束，垂直空间由 line-height 供给（1.25 → 上下各 0.125em）；
-   整行共享渐变场 = 整体打光，更符合"字即图形" */
+/* 行1：/insights 门牌 —— Playfair Display 700 斜体（唯一一次衬线 display；
+   起始 700 去宣告感）。渐变放整行而非字符级：字符级盒会横向裁掉斜体墨迹
+   （i 点右、g 钩左），整行共享渐变场 = 整体打光，更符合"字即图形"。
+   暗态 40% = 还没通电的灯（暗度由 prologue.js 字符动画控制 opacity 0→0.4），
+   揭示瞬间亮度 40→75% + 字重 700→900（font-variation-settings 补间，
+   仅 Playfair 可变字体支持 —— 中文无可变版本，此项动效标题独占） */
 .title-display {
   display: block;
   font-family: 'Playfair Display', 'Times New Roman', serif;
   font-style: italic;
-  font-weight: 900;
-  font-size: clamp(3rem, 13vw, 9.5rem);
+  font-weight: 700;
+  font-variation-settings: 'wght' 700; /* 起始 700；揭示时 JS 代理补间到 900 */
+  font-size: clamp(3.5rem, 11vw, 7.5rem); /* display 字级抬到 120px（2026-08-11：
+     与正文 12.5px 比值 ≈ 9.6:1，贴近 Awwwards 体系 ≥10:1） */
   line-height: 1.25;
   letter-spacing: -0.02em; /* 大字号衬线收紧字距，避免松散 */
   margin-bottom: 1vh;
   /* 行末斜体墨迹（s 的尾巴）超出内容盒右缘会被渐变裁剪：
      padding-right 扩展背景覆盖区，0.1em ≈ 15px */
   padding-right: 0.1em;
-  background: linear-gradient(180deg, #ffffff 25%, #a8c4ff 100%);
+  /* 暗态渐变 = 暗银（grok 2026-08-07 两轮验证：白/亮灰渐变 + 柔光仍像已点亮；
+     未通电门牌 = 暗银无发光，通电（.title-live）才回白亮渐变 + 光晕全开） */
+  background: linear-gradient(180deg, #7e93aa 25%, #46587a 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* 双层光晕：近层锐光界定字形 + 远层蓝紫弥散营造"字在发光场里"的体积感，
-     避免单一 drop-shadow 的贴纸描边感 */
-  filter: drop-shadow(0 0 18px rgb(var(--mono-rgb) / 0.45))
-    drop-shadow(0 0 110px rgba(59, 108, 246, 0.36));
+  /* 暗态光晕近乎无（只留字形轮廓的呼吸余量）—— 光晕是通电的资本，
+     揭示时 .title-live 全开 */
+  filter: drop-shadow(0 0 6px rgb(var(--mono-rgb) / 0.05))
+    drop-shadow(0 0 24px rgba(59, 108, 246, 0.03));
+  transition: filter 0.15s ease, background 0.15s ease;
 }
 
-/* 行2：中文副题 —— 思源宋体 Heavy（报告/档案感，呼应"生成 HTML 报告"母题） */
-.title-cn {
-  display: block;
-  font-family: var(--font-serif);
-  font-weight: 900;
-  font-size: clamp(1.3rem, 3vw, 2.4rem);
-  line-height: 1.2;
-  letter-spacing: 0.04em; /* 宋体副题稍放字距，书卷气 */
-  color: var(--text);
+/* 通电（揭示拍，prologue.js 加类）：白亮渐变 + 光晕全开 —— 「被看见的光有重量」 */
+.title-display.title-live {
+  background: linear-gradient(180deg, #ffffff 25%, #a8c4ff 100%);
+  filter: drop-shadow(0 0 18px rgb(var(--mono-rgb) / 0.45))
+    drop-shadow(0 0 110px rgba(59, 108, 246, 0.36));
 }
 
 /* 渐变文字必须落在字符级：wrapChars 把文字拆成 .prologue-char 后，
@@ -279,121 +342,210 @@ body:has(.hud[data-act='act3']) {
   color: transparent;
 }
 
-/* 行2 中文副题：宋体横细竖粗自带笔锋层次，纯白即可，不做渐变 */
-.title-cn .prologue-char {
-  background: none;
-  color: var(--text);
-  text-shadow: 0 0 24px rgb(var(--mono-rgb) / 0.18);
+.title-display .hl {
+  /* 命令名高亮：附额外青色光晕（暗态收敛，通电随父级全开） */
+  filter: drop-shadow(0 0 6px rgb(var(--mono-rgb) / 0.2));
+  transition: filter 0.15s ease;
 }
 
-.title-display .hl {
-  /* 命令名高亮：附额外青色光晕 */
+.title-display.title-live .hl {
   filter: drop-shadow(0 0 16px rgb(var(--mono-rgb) / 0.55));
 }
 
-.prologue-body {
-  max-width: 640px;
-  font-size: clamp(0.95rem, 1.6vw, 1.1rem);
-  line-height: 1.4;
-  color: var(--text);
-}
-
-/* 正文分层字阶（诗句式短行排版，段距紧凑） */
-.body-lead {
-  font-weight: 700;
-  font-size: 1.15rem;
-  color: var(--text);
-}
-
-.body-detail {
-  font-size: 0.88rem;
-  color: rgba(232, 236, 244, 0.46);
-}
-
-/* 流水线六环节：青色箭头点缀（数据视觉语言，呼应引擎 HUD 轨道） */
-.pipeline {
-  font-size: 0.88rem;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-  color: var(--text);
-  margin: 0.25em 0 0.35em;
-}
-
-.pipe-arrow {
-  font-style: normal;
-  color: var(--mono);
-  font-size: 1.2rem; /* 比环节文字大一档：青箭头是小字号下易被误读为灰白的元凶，放大 + 加粗 */
-  font-weight: 700;
-  margin: 0 0.45em;
-  text-shadow: 0 0 14px rgb(var(--mono-rgb) / 0.85);
-}
-
-/* 点题句：思源宋体 900（全篇主题最重强调，与标题副题字阶呼应） */
-.body-theme {
+/* 行2：门牌副文 —— 思源宋体 Heavy（悬念句层级；与钩子/点题句同一语境界）。
+   「说→评」反转链的起点（副题问说，钩子答评），与钩子合拍轻落（不拆字） */
+.title-cn {
+  display: block;
   font-family: var(--font-serif);
   font-weight: 900;
-  font-size: 1.45rem;
+  font-size: clamp(1rem, 2vw, 1.15rem);
+  line-height: 1.5;
+  letter-spacing: 0.04em; /* 宋体副题稍放字距，书卷气 */
   color: var(--text);
-  text-shadow: 0 0 26px rgb(var(--mono-rgb) / 0.3);
 }
 
-/* 正文行距紧凑（诗句式短行排版，段距让位于行距） */
-.prologue-body p + p {
-  margin-top: 0.25em;
-}
-
-/* 聊天窗输出示例：两行英文 + file:// 链接（文本锚定知识页话术原文）。
-   等宽字体 = 数据与终端层，聊天窗是它天然场景；半透明面板 + 青色 file 行高亮 */
-.prologue-chat {
-  width: 100%;
-  max-width: 560px;
-  margin: 0.4em auto 0.5em;
-  padding: 0.5em 1.1em;
+/* 钩子：居左（与报告块同一根左缘），<br> 强制两行 —— 反转节奏靠两行的
+   停顿感，禁宽度自然折行（折行位置失控会破坏「俏皮→反转」的拍点）。
+   「点评你」三字青色高亮 + 加大（2026-08-11 主人裁决：蓝色从「你」扩到整组动词）
+   （色彩逻辑闭环：青色=关于你的数据（条目/「点评你」/圆环）、
+   琥珀=被看见的瞬间（点题）、冷蓝=环境光） */
+.prologue-hook {
+  align-self: flex-start;
+  margin: 2vh 0 0 var(--copy-gutter); /* 与 masthead 同左缘（随标题区整体左移，2026-08-11） */
+  font-family: var(--font-serif);
+  font-weight: 900;
+  font-size: clamp(1rem, 1.6vw, 1.15rem);
+  line-height: 1.55;
   text-align: left;
+  color: var(--text);
+}
+
+.hl-you {
+  color: var(--mono);
+  text-shadow: 0 0 12px rgb(var(--mono-rgb) / 0.45);
+  font-size: clamp(1.35rem, 2.2vw, 1.7rem); /* 点评你 三字加大（2026-08-11 主人裁决） */
+}
+
+/* 报告卡（2026-08-11 布局重构「展品即主角」）：完整展品 = 条目区 + 分隔线 + 生成过程行。
+   终端窗质感（与 S1 面板同族：暗底圆角细边）—— product IS the hero（2026 hero 趋势：
+   报告就是产品视觉）；v3 卡位 = 钩子(左柱) 与判决(右锚) 之间的中位（28vw）——
+   钩子 → 卡 → 判决 三阶「左上 → 右下」对角分布，右侧负空间留星点呼吸。
+   换行规则：等宽一行禁止折行（数字折行 = 数据被截断的观感）；
+   窄屏先缩字号（0.78→0.7rem），再不行才允许容器横向滚动。
+   透明度渐进（首行 100% → 末行 18%）由 prologue.js 内联写入 */
+.prologue-report {
+  align-self: flex-start;
+  margin: 4.5vh 0 0 28vw;
+  width: min(560px, 52vw, calc(100vw - 40px));
+  background: rgba(8, 12, 20, 0.78);
+  border: 1px solid rgba(90, 140, 200, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04);
+  padding: 18px 22px 14px;
+  overflow-x: auto; /* 窄屏兜底：缩字号仍放不下才允许横向滚动 */
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  line-height: 1.8;
-  color: var(--text-dim);
-  border: 1px solid rgb(var(--mono-rgb) / 0.22);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: inset 0 0 24px rgba(59, 108, 246, 0.1);
+  line-height: 1.7;
+  text-align: left;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.prologue-chat p {
-  margin: 0;
+/* 条目展品（键值对，6 条类型差混排，末条右缘裁切 + 省略号；
+   私有标记行已按 2026-08-11 主人裁决移除）。
+   数据行零「你」字 —— 冷热分明（热词只在钩子/点题句） */
+.report-line {
+  white-space: nowrap;
+  color: var(--text);
+  font-variant-numeric: tabular-nums; /* 提案 D：等宽数字对齐工整，物证像打印出来的 */
 }
 
-.prologue-chat p + p {
-  margin-top: 0.35em;
+.report-line.is-cut {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.prologue-chat .chat-file {
+/* 首行悬置光标 ▌：摆好完成（0.9s）才开始闪烁，1s 周期 ——
+   CSS animation-delay + backwards 填充 = 0.9s 前静态在场
+   （「这条还没完，等你 Enter」）；揭示瞬间由 JS 熄灭。
+   朴素化（grok 2026-08-07 验证：青色光晕像「选区残影」，终端插入符
+   本就无光晕 —— 数据区只靠白→灰亮度阶梯，青色语义留给「你」字/圆环） */
+.line-cursor {
   color: var(--mono);
-  text-shadow: 0 0 12px rgb(var(--mono-rgb) / 0.4);
+  animation: cursor-blink 1s steps(1) infinite;
+  animation-delay: 0.9s;
+  animation-fill-mode: backwards;
 }
 
-.prologue-source {
-  margin-top: 0.5vh;
+@keyframes cursor-blink {
+  0%,
+  49.9% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 生成过程行（2026-08-11：单句替代三环节箭头，并入报告卡做卡内收尾）：
+   分隔线上方 = 条目区，下方 = 机器的自述；窄屏允许折行 */
+.prologue-steps {
+  margin-top: 0.8em;
+  padding-top: 0.7em;
+  border-top: 1px solid rgb(var(--mono-rgb) / 0.15);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  color: rgba(232, 236, 244, 0.6);
+}
+
+/* 点题句：思源宋体 900（语境界最重字阶）。暗态在场（opacity≈0.25，
+   停顿必须有凝视对象）—— 不参与入场动画，从首帧暗态驻留；
+   揭示瞬间琥珀通电（.theme-live）。琥珀 = 全页唯一出现处（可自动核验：
+   琥珀 rgb(var(--act3-rgb)) 在序章段只出现在本规则与其注释）。
+   右锚（2026-08-11 v2）：与左柱展品卡构成「左上 → 右下」对角分布；
+   窄屏折两行后切回居中容器（≤720px 媒体查询） */
+.prologue-theme {
+  /* 判决位：右锚（flex-end + 右 1.5vw）—— 卡位右移后同步右移，保持干净间隙；
+     对角流终点；字级下限抬到 2.2rem —— editorial overlay 32-42px 档，撑起琥珀高潮 */
+  align-self: flex-end;
+  margin: 5vh 1.5vw 0 0;
+  font-family: var(--font-serif);
+  font-weight: 900;
+  font-size: clamp(2.2rem, 4vw, 2.8rem);
+  line-height: 1.3;
+  color: var(--text);
+  text-align: center;
+  opacity: 0.2; /* 暗态在场（grok 2026-08-07 验证：0.25 在部分屏偏中灰，再沉一级） */
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+/* 通电光尾（100~150ms）：琥珀文字 + 双层琥珀弥散 */
+.prologue-theme.theme-live {
+  opacity: 1;
+  color: var(--act3); /* 琥珀：全页唯一出现处 */
+  text-shadow: 0 0 24px rgb(var(--act3-rgb) / 0.55), 0 0 64px rgb(var(--act3-rgb) / 0.25);
+}
+
+/* 揭示时颗粒聚在点题句周围（300ms 脉冲淡入，之后保持在场） */
+.prologue-theme::after {
+  content: '';
+  position: absolute;
+  inset: -60% -90%;
+  z-index: -1;
+  background-image: var(--grain-uri);
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  -webkit-mask-image: radial-gradient(ellipse 62% 95% at 50% 50%, #000, transparent 72%);
+  mask-image: radial-gradient(ellipse 62% 95% at 50% 50%, #000, transparent 72%);
+  pointer-events: none;
+}
+
+.prologue-theme.theme-live::after {
+  opacity: 0.16;
+}
+
+/* 来源行（展签）：压一行贴视口右下（贴边定律，永不抢展品）。
+   用 absolute 而非 align-self: flex-end —— flex 列内贴右会被底中圆环
+   顶回中央（grok 2026-08-07 验证：展签落底中 = 贴边失效）；
+   bottom 2vh 避开圆环安全区。锚点契约：压一行但不可删字。
+   2026-08-11：white-space: nowrap 压一行（无 max-width 约束，桌面永不折行；
+   窄屏才允许折行，见 ≤720px 媒体查询） */
+.prologue-source {
+  position: absolute;
+  right: 2vw;
+  bottom: 2vh;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
   color: var(--text-dim);
   letter-spacing: 0.04em;
+  text-align: right;
 }
 
 .prologue-link {
-  color: var(--mono);
+  /* 脚注区不跳色（grok 2026-08-07 两轮验证：链接过亮让来源行发光）：
+     默认暗灰青，hover 才亮青 */
+  color: rgba(125, 211, 252, 0.38);
   text-decoration: underline;
   text-underline-offset: 3px;
   pointer-events: auto;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+.prologue-link:hover {
+  color: var(--mono);
+  text-shadow: 0 0 8px rgb(var(--mono-rgb) / 0.4);
 }
 
 .prologue-hold {
-  margin-top: 1vh;
+  margin: auto 0 4vh; /* auto 吸满顶部剩余 → 出口底锚（2026-08-11 重构） */
+  position: relative; /* 标注绝对定位锚（环为唯一流内子元素 → 严格居中） */
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.4vh;
+  justify-content: center;
   pointer-events: auto;
   cursor: grab;
   user-select: none;
@@ -416,39 +568,42 @@ body:has(.hud[data-act='act3']) {
   touch-action: none;
   cursor: grab;
   outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* 键盘焦点指示（可达性）：outline: none 已关默认轮廓，键盘用户 Tab 到时补青色焦点环 */
-.hold-hit:focus-visible {
-  outline: 2px solid var(--mono);
-  outline-offset: 5px;
-}
-
+/* 方框终极杀（2026-08-11）：不管方框来自哪个状态（hover/focus/active/按压）、
+   哪条规则（outline/box-shadow/text-shadow），圆环区一律零框零辉光。
+   !important 压过一切特异性 —— 若有任何来源仍能画出框，必在页面代码之外 */
 .hold-ring {
   position: absolute;
   inset: 0;
   transform: rotate(-90deg);
+  outline: none;
 }
 
-/* 底环：常驻可见的引导环（呼吸脉动提示"这里可以按"），按下前就有轮廓 */
+/* 底环：常驻引导环 —— 圆环是常量（全程在场、不参与任何入场/退场动画，
+   收点除外）；青色 1px 细环 + 2s 呼吸脉动（提示"这里可以按"），
+   辉光补偿细环在暗场下的可见性 */
 .hold-ring-base {
   fill: none;
-  stroke: rgb(var(--mono-rgb) / 0.28);
-  stroke-width: 3;
-  animation: hold-breathe 2.4s ease-in-out infinite;
+  stroke: rgb(var(--mono-rgb) / 0.85); /* 常亮（永不低于 0.43 有效亮度） */
+  stroke-width: 1;
+  filter: drop-shadow(0 0 3px rgb(var(--mono-rgb) / 0.5));
+  animation: hold-breathe 2s ease-in-out infinite;
 }
 
 .hold-hit:hover .hold-ring-base {
-  stroke: rgb(var(--mono-rgb) / 0.5);
+  stroke: rgb(var(--mono-rgb) / 0.95);
 }
 
+/* 大喘气（2026-08-11）：常亮 + 大幅振幅 —— 沉到 0.43 但从不暗、涨到 0.85 全亮 */
 @keyframes hold-breathe {
   0%,
   100% {
-    stroke-opacity: 0.28;
+    stroke-opacity: 0.5;
   }
   50% {
-    stroke-opacity: 0.55;
+    stroke-opacity: 1;
   }
 }
 
@@ -464,58 +619,146 @@ body:has(.hud[data-act='act3']) {
   filter: drop-shadow(0 0 6px rgb(var(--mono-rgb) / 0.7));
 }
 
-/* 环心符号：斜杠命令感，发光提示可交互 */
+/* 环心 = /insights 命令名（2026-08-11：由 "/" 扩为完整命令 —— 环 = 命令在执行）。
+   呼吸与环边框同拍：同 2s ease-in-out 同相位（同时挂载 → 动画时钟对齐），
+   环亮它亮、环沉它沉 —— 命令跟着执行进度一起喘息。暗态可读不抢细环 */
 .hold-core {
   font-family: var(--font-mono);
   font-weight: 700;
-  font-size: 2.1rem;
+  font-size: clamp(0.85rem, 1.5vw, 1.15rem); /* 9 字符等宽 ≈ 99px，环内径 119px 放得下 */
   line-height: 1;
-  color: var(--mono);
-  text-shadow: 0 0 18px rgb(var(--mono-rgb) / 0.7);
+  color: rgb(var(--mono-rgb) / 0.55);
+  text-shadow: none;
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
-  transition: transform 0.15s ease; /* 按压放大平滑（is-dragging 时） */
+  animation: core-breathe 2s ease-in-out infinite; /* 与 hold-breathe 同参数同相位 */
+  transition: transform 0.15s ease, color 0.15s ease, text-shadow 0.15s ease;
 }
 
+@keyframes core-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.hold-hit:hover .hold-core {
+  color: var(--mono);
+  /* 2026-08-11：hover 文字辉光移除 —— text-shadow 是矩形，按紧时在圆环内
+     形成一个文字大小的亮框；悬停反馈只靠颜色提亮 */
+}
+
+/* 两侧标注 = 进入 S1 的最大钩子（2026-08-11 主人点名重新设计，不从旧提示字锚定）：
+   左右统一 mono 700 近白 + 微青辉光（命令腔）—— 动作与条件同权重同声部；
+   → 环 = 对象（/insights 命令在环中执行）。
+   绝对定位贴环两侧（环 = 唯一流内子元素，无论标注多宽环都严格居中） */
 .hold-label {
+  position: absolute;
+  top: 50%;
+  white-space: nowrap;
+  font-family: var(--font-mono);
   font-weight: 700;
-  font-size: 1.05rem;
-  letter-spacing: 0.08em;
-  color: var(--text);
-  text-shadow: 0 0 20px rgb(var(--mono-rgb) / 0.25);
+  font-size: clamp(0.95rem, 1.5vw, 1.25rem);
+  color: rgba(232, 236, 244, 0.92);
+  text-shadow: 0 0 10px rgb(var(--mono-rgb) / 0.28);
 }
 
-.hold-hint {
-  font-size: 0.8rem;
-  color: var(--text-dim);
+/* 垂直居中放内层：GSAP 会写内联 transform + translate/rotate/scale: none 覆盖外层
+   （2026-08-11 实测），内层与 GSAP 永不接触，居中恒成立 */
+.hold-label-inner {
+  display: block;
+  translate: 0 -50%;
 }
 
-/* 按住反馈：环心符号放大 + 底环提亮（按压即反馈，参照零站点按压变色手法） */
+.hold-label-l {
+  right: calc(50% + 66px + 1.2vw); /* 66px = 环半径，标注贴环左缘 */
+  text-align: right;
+}
+
+.hold-label-r {
+  left: calc(50% + 66px + 1.2vw);
+  text-align: left;
+}
+
+/* 按住反馈：环心符号放大 + 底环提亮（按压即反馈，参照零站点按压变色手法）。
+   2026-08-11 修方框：text-shadow 是矩形辉光，/insights 放大后辉光横向溢出圆环
+   外缘 → 看起来像方框覆盖；改为径向圆形辉光（::after，z-index -1 在环下） */
 .prologue-hold.is-dragging .hold-core {
   transform: scale(1.18);
-  text-shadow: 0 0 26px rgb(var(--mono-rgb) / 0.9);
+  text-shadow: none; /* 矩形辉光移除（2026-08-11：会渲染成方框）；按压光效归 ::after 径向圆辉光 */
+  animation: none; /* 按压时边框停呼吸，环心同停（否则只有字在喘） */
+}
+
+.prologue-hold.is-dragging .hold-hit::after {
+  content: '';
+  position: absolute;
+  inset: -20px;
+  z-index: -1; /* .prologue-hold 是 z-index:1 的层叠上下文，负层只沉到环下 */
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(var(--mono-rgb) / 0.26), transparent 68%);
+  pointer-events: none;
 }
 
 .prologue-hold.is-dragging .hold-ring-base {
-  stroke: rgb(var(--mono-rgb) / 0.55);
+  stroke: rgb(var(--mono-rgb) / 0.95);
   animation: none;
 }
 
-/* 尊重动效偏好：关闭呼吸/颗粒跳帧动画（可访问性；颗粒降为静态） */
-@media (prefers-reduced-motion: reduce) {
-  .hold-ring-base {
-    animation: none;
+/* 停顿 80ms 真空（0.9~0.98s）：心跳星/圆环/颗粒全停一拍
+   （.paused 由 prologue.js 摆好完成时加、可走时移除） */
+.prologue.paused .fx-heart,
+.prologue.paused .hold-ring-base,
+.prologue.paused .hold-core {
+  animation-play-state: paused; /* 环心呼吸随边框一起停（真空一拍）；
+     月球由 JS 侧检查 .paused 停转（球面投影无 CSS 动画） */
+}
+
+/* 尊重动效偏好：关闭呼吸/闪烁动画（可访问性；颗粒冻结保持静态） */
+/* 窄屏（≤720px）：报告卡放宽 + 缩字号档（0.7rem 下最长行仍一行放下，免卡内横滚）；
+   点题句切回居中容器（右锚在窄屏会裁出左缘）+ 降字级；
+   来源行允许折行（桌面 nowrap 压一行，锚点契约兜底） */
+@media (max-width: 720px) {
+  .prologue-report {
+    width: min(560px, calc(100vw - 40px));
+    margin-left: var(--copy-gutter); /* 28vw 中位在窄屏会把卡片右缘推出视口，回退左柱 */
+    font-size: 0.7rem;
   }
-  .prologue-fx {
-    transition: none;
+  .prologue-theme {
+    align-self: center;
+    margin: 3vh 0 0;
+    font-size: clamp(1.6rem, 8vw, 2.2rem);
   }
-  .prologue::after {
-    animation: none;
+  .prologue-source {
+    white-space: normal;
+    max-width: 92vw;
   }
-  .act-scroll {
-    animation: none;
-    opacity: 0.8;
+  .prologue-hold {
+    flex-direction: column; /* 窄屏两侧放不下：标注折叠为上中下 */
+    gap: 0.8vh;
+  }
+  .hold-label {
+    position: static; /* 绝对定位在窄屏会裁出视口：回流入流，上中下排列 */
+    text-align: center;
+  }
+  .hold-label-inner {
+    translate: none;
+  }
+}
+
+/* 矮视口（≤850px 高）：压缩区距，避免内容超高触发内部滚动（2026-08-11 重构配套） */
+@media (max-height: 850px) {
+  .prologue-title {
+    margin-top: 4vh;
+  }
+  .prologue-report {
+    margin-top: 3vh;
+  }
+  .prologue-theme {
+    margin-top: 3vh;
   }
 }
 
@@ -566,15 +809,6 @@ body:has(.hud[data-act='act3']) {
   50% {
     opacity: 0.9;
   }
-}
-
-/* ---------- 降级模式（无 WebGL2） ---------- */
-
-.degraded-note {
-  margin-top: 3vh;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--act3);
 }
 
 /* ---------- HUD 覆盖层（M2） ----------
@@ -933,22 +1167,6 @@ body:has(.hud[data-act='act3']) {
 }
 
 /* 尊重动效偏好：关掉脉冲 / 扫光 / 入场 stagger（可访问性） */
-@media (prefers-reduced-motion: reduce) {
-  .hud-node.is-cur {
-    animation: none;
-  }
-  .hud.is-gating .hud-flow {
-    animation: none;
-    opacity: 0.5;
-  }
-  .hud-enter .hud-node,
-  .hud-enter .hud-title,
-  .hud-enter .hud-counter,
-  .hud-enter .hud-restart {
-    animation: none;
-  }
-}
-
 /* 窄屏：标题让位给轨道（标题信息已在骨架覆盖层），只留轨道 + 计数 + 回到序章 */
 @media (max-width: 720px) {
   .hud-title {
@@ -965,13 +1183,13 @@ body:has(.hud[data-act='act3']) {
    透明度/位移由 s2.js 的 scrub 逐段驱动（滚动 = 看，不在这里做 CSS 动画）。
    文案逐字锚定 PLAN §2.2 S2，不得改写删减。
    演出化调整(U3):文案位置统一 —— 原顶部居中(top 9vh / left 50%)改为
-   左列布局(与 .s1-copy 同款:margin-left 6vw 左对齐、--s1-col 同宽),
+   左列布局(与 .s1-copy 同款:margin-left var(--copy-gutter) 左对齐、--copy-col 同宽),
    与 S1/S3 站内文案同一根左列。 */
 
 .s2-copy {
   position: absolute;
   top: 9vh;
-  left: 6vw;
+  left: var(--copy-gutter);
   /* 列宽 = :root 的 --copy-col(S1 面板/文案同一根左柱,站间共享 —— 改一处全生效) */
   width: var(--copy-col);
   text-align: left;
@@ -1038,7 +1256,7 @@ body:has(.hud[data-act='act3']) {
    挂在 #ui（fixed inset 0）下，absolute 即视口坐标；bottom 17vh 让开 HUD 轨道区 */
 .s3-copy {
   position: absolute;
-  left: 6vw;
+  left: var(--copy-gutter);
   bottom: 17vh;
   max-width: 540px;
   z-index: 12; /* #ui 层内、HUD(30) 之下 */
@@ -1137,7 +1355,7 @@ body:has(.hud[data-act='act3']) {
 .s1-terminal {
   position: relative;
   margin-top: 33vh;
-  margin-left: 6vw; /* 面板居左(命令入口),河主体在中央偏右 —— 构图错开 */
+  margin-left: var(--copy-gutter); /* 面板居左(命令入口),河主体在中央偏右 —— 构图错开 */
   width: var(--copy-col);
   /* 背景 0.72 → 0.85:面板与河错开后,面板内只剩源头小段粒子,
      0.85 遮住面板内透出,保留玻璃质感(2026-08-05 构图修复配套) */
@@ -1368,7 +1586,7 @@ body:has(.hud[data-act='act3']) {
 .s1-copy {
   position: relative; /* ::before 衬底定位锚(与 .s2-copy 同款) */
   margin-top: 6vh;
-  margin-left: 6vw;
+  margin-left: var(--copy-gutter);
   width: var(--copy-col);
   text-align: left;
 }
@@ -1454,14 +1672,3 @@ body:has(.hud[data-act='act3']) {
 }
 
 /* 尊重动效偏好（简报 §5）：光标不闪、扫描线静止；节拍时长由 s1.js 置 0 直接呈现 */
-@media (prefers-reduced-motion: reduce) {
-  .s1-cursor {
-    animation: none;
-    opacity: 0.85;
-  }
-  .s1-scanline {
-    animation: none;
-    top: 25%;
-    opacity: 0.02;
-  }
-}

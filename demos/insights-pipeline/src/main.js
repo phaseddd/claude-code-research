@@ -18,20 +18,7 @@ import { createS2, S2_CAM_ENTER, S2_LOOK_ENTER } from './scenes/s2.js'
 import { createS3 } from './scenes/s3.js'
 import { createHud, ACT_TITLES } from './hud.js'
 import { STATS } from './data/sessions.js'
-import { easeInOutSine, isReducedMotion, rampCameraPath } from './utils.js'
-
-// 尊重动效偏好：黑场三段式淡入在 reduce 下直接呈现
-const reducedMotion = isReducedMotion()
-
-// WebGL2 检测：无则降级为静态科普页（科普信息不丢）
-const supportsWebGL2 = (() => {
-  try {
-    const c = document.createElement('canvas')
-    return !!(window.WebGL2RenderingContext && c.getContext('webgl2'))
-  } catch {
-    return false
-  }
-})()
+import { easeInOutSine, rampCameraPath } from './utils.js'
 
 // 分层容器：#scene（3D 层，z-index 0）与 #ui（DOM 层，z-index 10），
 // 统一挂到 index.html 的 #app 应用根（#app 的 fixed inset:0 规则由此生效）
@@ -287,11 +274,13 @@ function bootTimeline() {
   })
   // 落位第一幕第一站（skipTo 复位位置；创建时已 enter，此处幂等）
   timeline.skipTo('s1')
-  // 黑场三段式：场景先置 0（黑场）→ 停顿 0.15s → 淡入（电影化过渡，避免硬切换）。
-  // 注：sceneEl 初始 opacity 为 1，不先置 0 则 gsap 1→1 是空操作，黑场停顿缺失
-  // 2026-08-06 减半（停顿 0.3→0.15 / 淡入 0.5→0.25），加快进入 S1
+  // 黑场三段式（v2 规格 PROLOGUE-REDESIGN.md §6 硬切）：bootTimeline 在序章
+  // 黑场结束帧被调用（prologue.js onEnter），场景先置 0（黑场）→ S1 面板
+  // 从 y=-24 落下是唯一事件入场（s1.js 自带下落动画，序章只负责交接时机）。
+  // 没有「引擎淡入」：场景层淡入并行存在 = 背景 0.8-1s 慢速衬底（无 delay，
+  // 黑场结束帧即开始与面板落下并行），不再是「等场景亮」的旧节奏
   sceneEl.style.opacity = '0'
-  gsap.to(sceneEl, { opacity: 1, duration: reducedMotion ? 0.01 : 0.25, delay: reducedMotion ? 0 : 0.15 })
+  gsap.to(sceneEl, { opacity: 1, duration: 0.9 })
 }
 
 // 滚动帧 → 时间轴（scroll 只在引擎阶段存在：序章阶段未创建，
@@ -323,6 +312,7 @@ function backToPrologue() {
   shared.river = null
   window.removeEventListener('resize', onResize)
   renderer.dispose()
+  renderer.forceContextLoss() // three dispose 不释放 context；反复「重新体验」防耗尽
   renderer.domElement.remove()
   renderer = null
   shared.scene = null
@@ -331,17 +321,16 @@ function backToPrologue() {
   bootPrologue()
 }
 
-// 序章挂载（可重复调用：首次进入 + 第一幕"重新体验"回到序章）
+// 序章挂载（可重复调用：首次进入 + 第一幕"重新体验"回到序章）。
+// 2026-08-11：降级模式移除 —— demo 全程要求 WebGL2（序章月球 + 引擎都是），
+// 不支持即白屏，无静态科普页分支
 function bootPrologue() {
   mountPrologue({
     uiEl,
-    degraded: !supportsWebGL2,
-    onEnter: supportsWebGL2
-      ? () => {
-          // 序章完成：淡出序章 → 进入引擎（时间轴落位第一幕第一站）
-          bootTimeline()
-        }
-      : null,
+    onEnter: () => {
+      // 序章完成：淡出序章 → 进入引擎（时间轴落位第一幕第一站）
+      bootTimeline()
+    },
   })
 }
 

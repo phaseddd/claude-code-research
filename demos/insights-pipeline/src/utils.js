@@ -1,16 +1,11 @@
 // utils.js —— 场景与内核共享小工具（消除跨文件复制粘贴；改一处全部生效）
-// 契约：纯函数 + 无状态（除 isReducedMotion 单例缓存），不依赖具体场景概念
+// 契约：纯函数 + 无状态，不依赖具体场景概念
 import * as THREE from 'three'
 
 // ---------- 数值 ----------
 export const clamp01 = (v) => Math.min(1, Math.max(0, v))
 export const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2
 export const easeInOutQuad = (x) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2)
-
-// ---------- 动效偏好（单例：加载时求值一次；全项目共享同一结论） ----------
-let _reduced = null
-export const isReducedMotion = () =>
-  (_reduced ??= window.matchMedia('(prefers-reduced-motion: reduce)').matches)
 
 // ---------- 滚动浮现文案（各站 scrub 共用）：p 在 [a,b] 内 0→1 淡入 + 上移 shiftPx ----------
 export function scrubFade(el, p, a, b, shiftPx = 14) {
