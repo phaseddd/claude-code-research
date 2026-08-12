@@ -12,4 +12,4 @@
 
 | Demo | 说明 |
 |------|------|
-| [insights-pipeline](insights-pipeline/) | `/insights` 报告引擎流水线逐步演示（脚手架，待实现） |
+| [insights-pipeline](insights-pipeline/) | `/insights` 报告引擎流水线逐步演示（序章 + 第一幕三站，演出化打磨中） |

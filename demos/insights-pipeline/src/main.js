@@ -44,10 +44,19 @@ appEl.appendChild(uiEl)
 // 模块内部(渲染/滑轨/resize)也统一走 shared 字段,单一事实来源
 let renderer = null // 渲染器(bootTimeline 新建 / backToPrologue 销毁;scene/camera 存 shared)
 
+// resize 去抖(2026-08-13):拖窗时每个事件都会让河泛光层重建十几张 GPU 纹理,
+// 叠主渲染器 resize 成风暴 —— rAF 合并到一帧;回序章后尾帧由 renderer 空判兜底
+let resizeRaf = 0
 const onResize = () => {
-  shared.camera.aspect = window.innerWidth / window.innerHeight
-  shared.camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
+  if (resizeRaf) return
+  resizeRaf = requestAnimationFrame(() => {
+    resizeRaf = 0
+    if (!renderer) return // 引擎已销毁(backToPrologue 后的尾帧)
+    shared.camera.aspect = window.innerWidth / window.innerHeight
+    shared.camera.updateProjectionMatrix()
+    renderer.setSize(window.innerWidth, window.innerHeight)
+    shared.river?.resize(window.innerWidth, window.innerHeight)
+  })
 }
 
 // ---------- 段配置 ----------
@@ -253,8 +262,15 @@ function bootTimeline() {
   shared.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200)
   shared.camera.position.set(0, 0.7, 18.5) // 初始:S1 源头近景(各站 enter 再定位)
   // 引擎级光河:第一幕三站共享(简报 §6.1;bootTimeline 创建 / backToPrologue 销毁,
-  // 段只切可见窗口)。分流比来自合成数据统计(简报 §2.5:meta 支明显宽于 facet 支)
-  shared.river = createRiver({ scene: shared.scene, branchShare: STATS.metaShare })
+  // 段只切可见窗口)。分流比来自合成数据统计(简报 §2.5:meta 支明显宽于 facet 支)。
+  // 2026-08-13:河自持泛光层(内部场景/composer/合成 quad,见 river.js),
+  // 装配层只按序调用 update → render
+  shared.river = createRiver({
+    scene: shared.scene,
+    renderer,
+    camera: shared.camera,
+    branchShare: STATS.metaShare,
+  })
   window.addEventListener('resize', onResize)
   // 虚拟滚动：wheel / 触屏 → targetVh（2026-08-12 全站无键盘裁决，键盘通道删除）；lerp 平滑 → 每帧喂给时间轴
   scroll = createScroll({ max: totalVh, onFrame: onScrollFrame })
@@ -288,6 +304,8 @@ function bootTimeline() {
 function onScrollFrame(current, target, dt) {
   timeline?.onFrame(current, target, dt)
   shared.river?.update(0, dt)
+  // 幕间黑场(sceneEl opacity 0,占比 ~60%)期间画布不可见,跳过整条泛光链
+  if (sceneEl.style.opacity !== '0') shared.river?.render()
   renderer.render(shared.scene, shared.camera)
 }
 
@@ -306,7 +324,7 @@ function backToPrologue() {
   // s1 enter 因 !shared.river 为 false 复用旧 river,旧纹理二次 texStorage2D
   // 打在 immutable 纹理上 → uMap 采样失败 → 粒子全透明。此处销毁并置空,
   // 下次进入重建全新 river/纹理(renderer.dispose() 前置,先释放 JS 侧引用)
-  shared.river?.dispose()
+  shared.river?.dispose() // 含泛光层(composer/RT/合成 quad,2026-08-13 收进 river.js)
   shared.river = null
   window.removeEventListener('resize', onResize)
   disposeRenderer(renderer) // 三段式释放契约（utils；反复「重新体验」防耗尽 context）

@@ -31,7 +31,7 @@ import gsap from 'gsap'
 import * as THREE from 'three'
 import { createHoldButton } from './hold.js'
 import { createStarfield } from './starfield.js'
-import { disposeRenderer } from './utils.js'
+import { clamp01, disposeRenderer } from './utils.js'
 
 // 规格 §1 时间轴常量（秒）
 const T_PAUSE = 0.08 // 停顿 80ms 真空（0.9~0.98s）
@@ -41,6 +41,8 @@ const HOLD_SECONDS = 1.25 // 按住时长（规格 §5 鼠标/触屏通道）
 // 2026-08-12 二次裁决：0.12s 扩散太快看不出扫过过程 + 全白硬切 S1 青色无过渡
 // → 0.55s 扩散 + 白→青渐变；三次裁决（2026-08-12）：0.55s → 0.7s 更舒服
 const T_BURST = 0.7
+// 月球发条峰值（2026-08-13）：按住时自转提速上限 1.35× —— 主人：「不用转得那么快」
+const MOON_WIND_PEAK = 0.35
 
 // 报告条目（2026-08-11 主人逐条裁决终稿，六条）：
 //   首行 = 特殊条目「38% 的摩擦，同一个原因」—— 数值取主人本机真实月报校准
@@ -66,7 +68,9 @@ const REPORT_OPACITY = [1, 0.78, 0.6, 0.44, 0.3, 0.18] // 透明度渐进（首�
 //          ⊃ moon 网格（绕自身 Y = 斜轴自转，60s/圈，时间驱动帧率无关）
 //   贴图 = 本地资产 public/moon.jpg（无网络依赖、无降级路径）；
 //   mipmap 自动生成（缩小不噪）+ antialias + GPU 渲染，全部渲染器免费提供。
-//   返回 stop()：dispose 清理 GL 资源（含 forceContextLoss 确定性释放）并移除 canvas
+//   发条（2026-08-13 主人裁决）：setWind(p) 按住加速自转、松开回落 ——
+//   视觉映射单点入口，与序章「applyProgress = progress→视觉纯函数」契约一致
+//   返回 { setWind, stop }：stop 清理 GL 资源（含 forceContextLoss 确定性释放）并移除 canvas
 function createMoonMesh(container, root) {
   const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -104,22 +108,30 @@ function createMoonMesh(container, root) {
   scene.add(light)
   scene.add(new THREE.AmbientLight(0xffffff, 0.35))
 
+  let wind = 0 // 发条强度 0~1（setWind 驱动；按住加速、松开回落）
   let skipFrame = false // 隔帧渲染：60s/圈 = 0.1°/帧亚像素位移，30fps 视觉无损
   renderer.setAnimationLoop((t) => {
     if (root.classList.contains('paused')) return // 80ms 真空：冻结帧
     skipFrame = !skipFrame
     if (skipFrame) return
-    moon.rotation.y = (t / 60000) * Math.PI * 2 // 60s/圈
+    // 按住加速自转（2026-08-13 主人裁决：按紧 = 给它上发条，松开原速回落；
+    // 峰值 1.35× —— 主人：「不用转得那么快」）
+    moon.rotation.y = (t / (60000 / (1 + MOON_WIND_PEAK * wind))) * Math.PI * 2
     renderer.render(scene, camera)
   })
 
-  return () => {
-    disposed = true
-    renderer.setAnimationLoop(null)
-    geo.dispose()
-    mat.dispose()
-    mat.map?.dispose()
-    disposeRenderer(renderer) // 三段式释放契约（utils，防反复进序章耗尽 context）
+  return {
+    setWind(p) {
+      wind = clamp01(p)
+    },
+    stop() {
+      disposed = true
+      renderer.setAnimationLoop(null)
+      geo.dispose()
+      mat.dispose()
+      mat.map?.dispose()
+      disposeRenderer(renderer) // 三段式释放契约（utils，防反复进序章耗尽 context）
+    },
   }
 }
 
@@ -181,10 +193,10 @@ export function mountPrologue({ uiEl, onEnter = null }) {
 
   // 月球（右上角补白，2026-08-11）：WebGL 真球体网格；挂在 fx 视差层内
   // → 随指针视差 ±6px 一起微动；贴图本地资产，无降级路径
-  const moon = document.createElement('div')
-  moon.className = 'fx-moon'
-  fxEl.appendChild(moon)
-  const moonStop = createMoonMesh(moon, root)
+  const moonEl = document.createElement('div')
+  moonEl.className = 'fx-moon'
+  fxEl.appendChild(moonEl)
+  const moon = createMoonMesh(moonEl, root) // {setWind, stop}（2026-08-13 发条契约）
 
   let parallaxRaf = 0
   let px = 0
@@ -291,6 +303,7 @@ export function mountPrologue({ uiEl, onEnter = null }) {
   const applyProgress = (p) => {
     if (!ringCX) refreshRingCenter() // 首次惰性（入场完成、布局稳定后才可能按住）
     const e = p ** 1.8 // 前缓后急：吸入感（与 hold 回退同源 = 原速原样）
+    moon.setWind(p) // 月球发条（回退时同步松开 = 原速原样）
     const c = toFx(ringCX, ringCY)
     starfield.setCenter(c.x, c.y) // 坍缩中心（恒星坍缩的引力点）
     starfield.setE(e) // 收缩程度（外圈先动/拉丝/核心发光全在 shader）
@@ -327,7 +340,7 @@ export function mountPrologue({ uiEl, onEnter = null }) {
   function runBurst() {
     // 满环帧状态已由 hold 最后 tick 精确落定（progress=1 → onProgress → applyProgress(1)）
     // 月球 → fxEl 局部 → NDC（光罩光源源点；视差 ±6px 在 0.7s 内可忽略）
-    const rect = moon.getBoundingClientRect() // 月球在 fxEl 视差层内，rect 含视差
+    const rect = moonEl.getBoundingClientRect() // 月球在 fxEl 视差层内，rect 含视差
     const c = toFx(rect.left + rect.width / 2, rect.top + rect.height / 2)
     const vw = window.innerWidth + 40
     const vh = window.innerHeight + 40
@@ -365,7 +378,7 @@ export function mountPrologue({ uiEl, onEnter = null }) {
     starfield.dispose() // 星场 GL 释放（disposeRenderer 契约）
     hold.dispose() // 按住组件自清理
     if (parallaxRaf) cancelAnimationFrame(parallaxRaf) // 视差 rAF
-    moonStop?.() // 月球自转 rAF
+    moon?.stop() // 月球自转 rAF
     window.removeEventListener('pointermove', onPointerMove) // 视差监听
     root.remove() // 从 uiEl 移除 .prologue 节点
   }

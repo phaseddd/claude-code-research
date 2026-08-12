@@ -20,6 +20,10 @@
 //   预分配固定全量、不用 drawRange:第一幕粒子数恒定(简报可微调条款,无动态增减需求)
 
 import * as THREE from 'three'
+// 泛光层(2026-08-13 主人裁决「河更亮更好看」进 main):河唯一实现者自持
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { makeSoftTexture, SOFT_POINT_FRAG } from './utils.js'
 
 // ---------- 河色(简报 §2.3 river 色阶) ----------
@@ -314,7 +318,9 @@ function gaussRandom() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
 }
 
-export function createRiver({ scene, branchShare = 0.73 } = {}) {
+// scene = 调用方主场景(泛光合成 quad 挂载处,非粒子所在场景);renderer/camera =
+// 引擎渲染器与相机(泛光层自持内部场景与 composer,装配层只按序调用 render/resize)
+export function createRiver({ scene, renderer, camera, branchShare = 0.73 } = {}) {
   // ---------- 粒子 buffer:预分配全量(层分区生成) ----------
   const n = TOTAL
   const aPathT = new Float32Array(n)
@@ -422,7 +428,50 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
 
   const mesh = new THREE.Points(geo, mat)
   mesh.frustumCulled = false // 粒子全路径分布,包围盒计算无意义(位置由 shader 覆盖)
-  scene.add(mesh)
+  const riverScene = new THREE.Scene() // 河独用场景(泛光层渲染目标,2026-08-13)
+  riverScene.add(mesh)
+
+  // ---------- 泛光层(2026-08-13):内部场景 → composer → 合成 quad ----------
+  // 河渲染进 composer.readBuffer(线性域 + bloom)→ quad 以 additive 叠回调用方
+  // 主场景;主渲染器保持透明,CSS 渐变背景原样。三个实测坑:
+  //   ① composer 构造函数无条件 renderToScreen=true —— 不关则最后一 pass 画到
+  //      画布、随即被主渲染 autoClear 抹掉,离屏结果永远收不到;
+  //   ② 结果落在 composer.readBuffer(非传入 RT),quad 采样它;setSize 会重建
+  //      readBuffer 纹理,resize() 里必须重绑 uniform;
+  //   ③ 普通 AdditiveBlending 会把 canvas alpha 写成 1 → 透明画布变不透明黑底
+  //      盖死 CSS 背景,必须 CustomBlending(颜色相加/alpha 不动)。
+  const composer = new EffectComposer(renderer)
+  composer.setPixelRatio(1) // 泛光是最低频内容:链上缓冲减半、视觉无损(主渲染器 DPR 不变)
+  composer.addPass(new RenderPass(riverScene, camera))
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.5, 0.6, 0.15)) // 尺寸仅构造期占位,由 setSize 决定
+  composer.setSize(window.innerWidth, window.innerHeight)
+  composer.renderToScreen = false // 见坑 ①
+  const quadGeo = new THREE.PlaneGeometry(2, 2)
+  const quadMat = new THREE.ShaderMaterial({
+    uniforms: { uTex: { value: composer.readBuffer.texture } },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() { vUv = uv; gl_Position = vec4(position.xy, 0.999, 1.0); }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uTex;
+      varying vec2 vUv;
+      void main() { gl_FragColor = vec4(texture2D(uTex, vUv).rgb, 1.0); }
+    `,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneFactor,
+    blendSrcAlpha: THREE.ZeroFactor,
+    blendDstAlpha: THREE.OneFactor,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  })
+  const quad = new THREE.Mesh(quadGeo, quadMat)
+  quad.renderOrder = 999
+  quad.frustumCulled = false
+  scene.add(quad)
 
   // ---------- 状态与接口 ----------
   let pulse = 0
@@ -508,9 +557,24 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
       uniforms.uPointerBias.value = biasV
     },
 
+    // 泛光层渲染(装配层每帧在 update 之后、主渲染之前调用;画布不可见时可跳过)
+    render() {
+      composer.render()
+    },
+
+    // 泛光层 resize:setSize 重建 readBuffer 纹理,quad uniform 必须重绑(见坑 ②)
+    resize(w, h) {
+      composer.setSize(w, h)
+      quadMat.uniforms.uTex.value = composer.readBuffer.texture
+    },
+
     dispose() {
       window.removeEventListener('pointermove', onPointerMove)
-      scene.remove(mesh)
+      scene.remove(quad) // 合成 quad 挂调用方主场景
+      quadGeo.dispose()
+      quadMat.dispose()
+      composer.dispose() // r170 dispose 覆盖内部两个 RT
+      riverScene.remove(mesh)
       geo.dispose()
       mat.dispose()
       uniforms.uMap.value.dispose()

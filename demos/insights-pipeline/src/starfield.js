@@ -52,6 +52,23 @@ const BREATH_OMEGA = (Math.PI * 2) / 1.5 // 心跳呼吸 1.5s 周期（原 CSS �
 // 漩涡系数（角动量守恒自转）：外圈星满收缩时转过 ≈1.2 × (r0/1.1) rad ≈ 62°，
 // 螺旋吸入感（方框溶解的关键；调大 = 旋涡更急，0 = 退回纯径向）
 const SPIN = 1.2
+// ---------- 流星（2026-08-13 主人裁决：重做，弃「固定斜线匀速周期循环」） ----------
+// 技法参考 three-comet-trail（固定池 + 段龄渐隐到黑 + additive 叠加头部聚亮）
+// 与 meteor effect spec（随机出生 3~7s 间隔、随机边缘、随机角度/速度、1~2s 寿命）：
+//   尾巴 = 200 段,只存在于头部走过的路径(出生点之后的段才可见,随头生长);
+//   亮度 (1-k)^2.5 幂渐隐 —— 有效亮尾 ~3 成行程,头部由高密度叠加自动聚亮
+const METEOR_N = 3 // 同屏上限
+const METEOR_SEG = 200 // 段距 ≈ 行程/200 ≈ 17px,与头部点径重叠成连续彗尾
+const METEOR_TRAVEL_MIN = 0.9 // 行程 NDC(0.45~0.8 屏宽,长但彗尾幂渐隐后有效亮尾克制)
+const METEOR_TRAVEL_MAX = 1.6
+const METEOR_FIRST_MIN = 0.8 // 首条出生窗口 0.8~2.3s(进场即见,不干等)
+const METEOR_FIRST_SPREAD = 1.5
+const METEOR_LIFE_MIN = 0.9 // 寿命 0.9~1.6s
+const METEOR_LIFE_SPREAD = 0.7
+const METEOR_GAP_MIN = 2 // 死后歇 2~6s 再投(随机出生 = 不机械)
+const METEOR_GAP_SPREAD = 4
+const METEOR_ANGLE_MIN = 25 // 屏面角 25~55° 下行,左右随机
+const METEOR_ANGLE_SPREAD = 30
 
 // ---------- 月球布光光罩（2026-08-12 二次裁决：WebGL 全屏光罩替代 DOM 渐变层） ----------
 // 主人两处裁决：① 原 0.12s 扩散太快，看不出「从月球扫出」的过程；② 全白硬切
@@ -237,6 +254,106 @@ export function createStarfield({ container, pausedEl }) {
   scene.add(mesh)
   scene.add(burstMesh)
 
+  // ---------- 流星（2026-08-13 主人裁决重做）：头 + 200 段随路径生长的尾巴 ----------
+  // 每条流星 = 顶点池 METEOR_N×METEOR_SEG,参数走 uniform 数组(生命周期由 JS 重投,
+  // 顶点零更新);出生点之后的段才可见(step(k, progress)) = 尾巴跟着头长出来,
+  // 而非「整条斜线横移」;亮度 (1-k)^2.5 幂渐隐到黑 + additive 头部聚亮
+  const meteorGeo = new THREE.BufferGeometry()
+  const mIdx = new Float32Array(METEOR_N * METEOR_SEG)
+  const mSeg = new Float32Array(METEOR_N * METEOR_SEG)
+  for (let m = 0; m < METEOR_N; m++) {
+    for (let k = 0; k < METEOR_SEG; k++) {
+      mIdx[m * METEOR_SEG + k] = m
+      mSeg[m * METEOR_SEG + k] = k
+    }
+  }
+  meteorGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(METEOR_N * METEOR_SEG * 3), 3))
+  meteorGeo.setAttribute('aIdx', new THREE.BufferAttribute(mIdx, 1))
+  meteorGeo.setAttribute('aSeg', new THREE.BufferAttribute(mSeg, 1))
+  meteorGeo.drawRange.count = METEOR_N * METEOR_SEG
+  const meteorUniforms = {
+    // uTime/uDPR/uMap 直接共享星场材质的 value 对象(同一时钟/同一纹理,
+    // ShaderMaterial 按 key 绑定引用) —— 免每帧与 resize 同步赋值
+    uTime: uniforms.uT,
+    uDPR: uniforms.uDPR,
+    uBorn: { value: new Float32Array([1e9, 1e9, 1e9]) }, // 出生时刻(1e9 = 未投;shader 负 progress clamp 0 → 不可见)
+    uLife: { value: new Float32Array([0, 0, 0]) },
+    uTravel: { value: new Float32Array([0, 0, 0]) }, // 总行程 NDC(速度 = travel/life)
+    uOrigin: { value: new Float32Array(6) }, // 3 × vec2(盒 NDC,同星场域)
+    uDir: { value: new Float32Array(6) },
+    uMap: uniforms.uMap, // 软点纹理与星场共用(SOFT_POINT_FRAG 同源)
+  }
+  const meteorMat = new THREE.ShaderMaterial({
+    uniforms: meteorUniforms,
+    vertexShader: /* glsl */ `
+      attribute float aIdx;
+      attribute float aSeg;
+      uniform float uTime;
+      uniform float uDPR;
+      uniform float uBorn[3];
+      uniform float uLife[3];
+      uniform float uTravel[3];
+      uniform vec2 uOrigin[3];
+      uniform vec2 uDir[3];
+      varying float vAlpha;
+      varying vec3 vColor;
+      void main() {
+        int m = int(aIdx + 0.5);
+        float life = max(uLife[m], 0.001);
+        float progress = clamp((uTime - uBorn[m]) / life, 0.0, 1.0);
+        // 尾巴只存在于头部走过的路径:段 k 落后头部 k/200 的行程,
+        // 头部未到 = 不可见(尾巴随头生长)
+        float k = aSeg / ${METEOR_SEG - 1}.0;
+        float segVis = step(k, progress);
+        // 段龄 → 亮度:头部最亮、尾部幂渐隐到黑(three-comet-trail 技法)
+        float bright = pow(1.0 - k, 2.5);
+        // 生命包络:出生快亮、临终熄灭(随机寿命下速度/亮度自然各异)
+        float env = smoothstep(0.0, 0.05, progress) * (1.0 - smoothstep(0.8, 1.0, progress));
+        vAlpha = segVis * env * bright * 0.9;
+        vColor = vec3(0.85, 0.93, 1.0); // 白热偏冷(与星场同族,不抢河青)
+        float headDist = uTravel[m] * (progress - k);
+        vec2 p = uOrigin[m] + uDir[m] * headDist;
+        gl_PointSize = (3.0 + 10.0 * bright) * uDPR;
+        gl_Position = vec4(p, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: SOFT_POINT_FRAG,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.AdditiveBlending,
+  })
+  const meteorMesh = new THREE.Points(meteorGeo, meteorMat)
+  meteorMesh.frustumCulled = false
+  scene.add(meteorMesh)
+  // 生命周期:每条流星只记下次出生时刻 next(born/life 在重投时作局部量直写
+  // uniform,不留镜像);死后歇 2~6s 随机重投 = 不机械;reduce 下永不出场
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const mNext = new Float32Array(METEOR_N)
+  for (let m = 0; m < METEOR_N; m++) {
+    mNext[m] = METEOR_FIRST_MIN + rnd() * METEOR_FIRST_SPREAD
+  }
+  const respawnMeteor = (m) => {
+    const fromTop = rnd() < 0.7 // 上缘为主,两侧边缘偶尔
+    const ox = fromTop ? rnd() * 1.8 - 0.9 : rnd() > 0.5 ? -1.02 : 1.02
+    const oy = fromTop ? 1.02 : rnd() * 0.5 - 0.25
+    // 屏面角 25~55° 下行(随机左右);盒 NDC 域按宽高比换算方向
+    const ang = ((METEOR_ANGLE_MIN + rnd() * METEOR_ANGLE_SPREAD) * Math.PI) / 180
+    const dx = (Math.cos(ang) * (rnd() > 0.5 ? 1 : -1)) / window.innerWidth
+    const dy = -Math.sin(ang) / window.innerHeight
+    const len = Math.hypot(dx, dy)
+    const born = uniforms.uT.value
+    const life = METEOR_LIFE_MIN + rnd() * METEOR_LIFE_SPREAD
+    mNext[m] = born + life + METEOR_GAP_MIN + rnd() * METEOR_GAP_SPREAD
+    meteorUniforms.uBorn.value[m] = born
+    meteorUniforms.uLife.value[m] = life
+    meteorUniforms.uTravel.value[m] = METEOR_TRAVEL_MIN + rnd() * (METEOR_TRAVEL_MAX - METEOR_TRAVEL_MIN)
+    meteorUniforms.uOrigin.value[m * 2] = ox
+    meteorUniforms.uOrigin.value[m * 2 + 1] = oy
+    meteorUniforms.uDir.value[m * 2] = dx / len
+    meteorUniforms.uDir.value[m * 2 + 1] = dy / len
+  }
+
   // ---------- 容器与渲染器（透明全屏 canvas，随 fxEl 视差微动） ----------
   // setPixelRatio 只在 resize 里统一处理（创建行冗余，simplify 2026-08-12）
   const wrap = document.createElement('div')
@@ -264,7 +381,15 @@ export function createStarfield({ container, pausedEl }) {
     const now = performance.now()
     const dt = Math.min(0.1, (now - last) / 1000)
     last = now
-    if (!pausedEl.classList.contains('paused')) uniforms.uT.value += dt // 80ms 真空冻结
+    if (!pausedEl.classList.contains('paused')) {
+      uniforms.uT.value += dt // 80ms 真空冻结（流星 uTime 与星场共享同一 value 对象）
+      // 流星生命周期（2026-08-13）：到点重投 —— 随机边缘/角度/寿命/速度
+      if (!reduceMotion) {
+        for (let m = 0; m < METEOR_N; m++) {
+          if (uniforms.uT.value >= mNext[m]) respawnMeteor(m)
+        }
+      }
+    }
     renderer.render(scene, camera)
   })
 
@@ -290,6 +415,8 @@ export function createStarfield({ container, pausedEl }) {
       geo.dispose()
       mat.dispose()
       uniforms.uMap.value.dispose()
+      meteorGeo.dispose()
+      meteorMat.dispose()
       burstGeo.dispose()
       burstMat.dispose()
       disposeRenderer(renderer)
