@@ -120,7 +120,8 @@ const GAUSS_SIGMA = 0.33 // 高斯截面 σ:±3σ≈1(简报 §3.1「offset = ga
 // 流速(t/s):沿路径参数每秒增量。视野内河段 ≈0.3t,除以流速 = 过视野秒数
 //   vS1 0.10(点亮后加速「唰」)/ vS2 0.07(从星云抽出略慢显「拽」)/ vS3 0.085(主段)
 //   分叉后 0.06(分流后减速入盒)—— 简报 §3.3.1 的 1.4~1.6 等抽象速按此换算
-const FLOW = { s1: 0.1, s2: 0.07, s3: 0.085, s3split: 0.06, warm: 0.07, idle: 0.045 }
+//   2026-08-12 simplify: warm 档随 s1 预热三级删除(「隐没→喷发」两级无 warm)
+const FLOW = { s1: 0.1, s2: 0.07, s3: 0.085, s3split: 0.06, idle: 0.045 }
 
 // 河宽(简报 §2.1 / §3.3.3):w = wMin + k × log1p(infoVolume)
 //   infoVolume = tokens/1000(sessions.js STATS 供给);源头窄由 widthEnv 包络(×0.45)承担
@@ -473,6 +474,14 @@ export function createRiver({ scene, branchShare = 0.73 } = {}) {
     // 站间重叠带淡入淡出由 shader 完成,场景侧只需在 enter/teardown 时切换
     setVisibleRange(start, end) {
       uniforms.uSegRange.value.set(start, end)
+    },
+
+    // 整河隐藏(2026-08-12 主人裁决「进度条满的那一刻,星河才出现」):
+    // S1 enter 置 true(拍1~3 河零存在),拍4 进度 100% 帧 setHidden(false) 同帧揭幕。
+    // 实现 = mesh.visible(three 对象级剔除,隐藏期 1e4 粒子不跑顶点着色器;
+    // 2026-08-12 simplify: 原 shader uniform 乘 0 仍全量光栅化,且无渐进需求)
+    setHidden(on) {
+      mesh.visible = !on
     },
 
     // 缓存盒吸收(简报 §4.3 入盒:粒子接近盒 alpha 渐隐,防穿模;

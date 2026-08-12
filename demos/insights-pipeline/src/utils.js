@@ -73,3 +73,12 @@ export const SOFT_POINT_FRAG = /* glsl */ `
     gl_FragColor = vec4(vColor, vAlpha) * tex;
   }
 `
+
+// ---------- WebGL 渲染器释放（2026-08-12 simplify 收口）：dispose 不释放 context，
+// 反复进入序章（星场/月球/引擎三处各自销毁重建）会静默耗尽 GL context ——
+// 三段式释放契约单一来源（原 starfield/prologue-moon/main 三处手抄同款）
+export function disposeRenderer(renderer) {
+  renderer.dispose()
+  renderer.forceContextLoss()
+  renderer.domElement.remove()
+}

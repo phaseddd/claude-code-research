@@ -29,10 +29,8 @@
   /* mono 的 RGB 分量:半透明变体统一写 rgb(var(--mono-rgb) / α)（原 rgba(125,211,252,…) 硬编码 62 处） */
   --mono-rgb: 125 211 252;
 
-  /* 琥珀的 RGB 分量:序章揭示瞬间点题句通电光尾唯一使用（可自动核验:
-     琥珀 = #f5b942 = --act3,在序章段只出现于 .theme-live 与其注释） */
-  --act3-rgb: 245 185 66;
-
+  /* 琥珀的 RGB 分量:原序章揭示拍点题句通电唯一使用,2026-08-12 揭示拍整体删除
+     （主人裁决「只有一瞬间的亮」）—— 定义随 .theme-live 一起移除 */
   /* 暗色文字衬底底色(RGB 分量;HUD 渐暗/节点底/站文案衬底/标签底片共用,
      改主题底色只动这一处 —— 原 rgba(5,7,13,…) 硬编码 5 处) */
   --ink-veil: 5 7 13;
@@ -184,8 +182,8 @@ body:has(.hud[data-act='act3']) {
 }
 
 /* 背景层：中心冷蓝微光 + 角落青紫晕（独立层便于鼠标视差位移 ±6px，
-   三层只碰背景 —— 展品静观众动；星点/心跳星由 prologue.js 生成
-   .fx-star/.fx-heart 挂在此层） */
+   三层只碰背景 —— 展品静观众动；星场 WebGL canvas 与月球挂在此层，
+   2026-08-12 星点由 DOM 迁移为 starfield.js 粒子） */
 .prologue-fx {
   position: fixed; /* 滚动容器（小屏）内固定于视口，背景不被滚走 */
   inset: -20px; /* 比视口大一圈，给视差位移留余量 */
@@ -197,26 +195,10 @@ body:has(.hud[data-act='act3']) {
   transition: transform 0.3s cubic-bezier(0.2, 0.6, 0.3, 1); /* 视差平滑跟随 */
 }
 
-/* 星点（数量见规格 PROLOGUE-REDESIGN.md §4：160 颗，JS 固定种子序列生成）+
-   心跳星（10 颗，将死未死的灯丝，1.5s 周期呼吸；相位错开由 JS 负 animation-delay 实现） */
-.fx-star {
-  position: absolute;
-  width: 2px;
-  height: 2px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.5);
-  box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
-}
-
-.fx-heart {
-  position: absolute;
-  width: 1.5px;
-  height: 1.5px;
-  border-radius: 50%;
-  background: #fff;
-  animation: heart-beat 1.5s ease-in-out infinite;
-}
-
+/* 星点/心跳星 2026-08-12 已迁移 WebGL（starfield.js 单 Points + shader）——
+   数量 500+20（修订 ⑤）、尺寸 3/4/5px、呼吸 1.5s、坍缩拉丝全在 GPU；
+   原 .fx-star/.fx-heart CSS 与 @keyframes heart-beat 随迁移删除，
+   .paused 冻结由 shader 的 uT 承担 */
 /* 月球（2026-08-11）：WebGL 真球体网格（tilt 斜轴 + 自转见 prologue.js createMoonMesh）。
    2026-08-11 修黑圈：canvas 时代的 inset 内阴影（伪造体积感）已删 —— 真 3D 光照自带
    明暗与边缘弧度，内阴影只会把球缘压成黑环；保留外微光晕。
@@ -239,19 +221,9 @@ body:has(.hud[data-act='act3']) {
   display: block;
 }
 
-@keyframes heart-beat {
-  0%,
-  100% {
-    opacity: 0.12;
-  }
-  50% {
-    opacity: 0.75;
-  }
-}
-
 /* 胶片颗粒层（feTurbulence 噪点）：平时 0.02 冻结（破除纯色黑场的
-   "网页感"但不抢展品），揭示瞬间 300ms 脉冲（.grain-pulse，JS 一次性加类）；
-   聚在点题句周围的局部颗粒由 .prologue-theme::after 承担（见下） */
+   "网页感"但不抢展品）。2026-08-12：揭示拍 300ms 脉冲（.grain-pulse）与
+   点题句局部颗粒（.prologue-theme::after）随揭示拍整体删除 —— 颗粒恒冻结 */
 .prologue::after {
   content: '';
   position: absolute;
@@ -261,23 +233,7 @@ body:has(.hud[data-act='act3']) {
   opacity: 0.02;
   mix-blend-mode: screen; /* screen 对暗底提亮明显，overlay 在纯黑上几乎无效 */
   background-image: var(--grain-uri);
-  animation: none; /* 冻结：v2 平时无跳帧 */
-}
-
-.prologue.grain-pulse::after {
-  animation: grain-pulse 0.3s ease-out;
-}
-
-@keyframes grain-pulse {
-  0% {
-    opacity: 0.02;
-  }
-  50% {
-    opacity: 0.08;
-  }
-  100% {
-    opacity: 0.02;
-  }
+  animation: none; /* 冻结：揭示拍删除后恒无跳帧 */
 }
 
 .prologue-title {
@@ -290,15 +246,15 @@ body:has(.hud[data-act='act3']) {
 /* 行1：/insights 门牌 —— Playfair Display 700 斜体（唯一一次衬线 display；
    起始 700 去宣告感）。渐变放整行而非字符级：字符级盒会横向裁掉斜体墨迹
    （i 点右、g 钩左），整行共享渐变场 = 整体打光，更符合"字即图形"。
-   暗态 40% = 还没通电的灯（暗度由 prologue.js 字符动画控制 opacity 0→0.4），
-   揭示瞬间亮度 40→75% + 字重 700→900（font-variation-settings 补间，
-   仅 Playfair 可变字体支持 —— 中文无可变版本，此项动效标题独占） */
+   暗态 40% = 还没通电的灯（暗度由 prologue.js 字符动画控制 opacity 0→0.4）。
+   2026-08-12：揭示拍（亮度 40→75% + 字重 700→900 通电）随退场重构整体删除
+   —— 标题保持暗态直到被月球白光吞没；.title-live 与 transition 一并移除 */
 .title-display {
   display: block;
   font-family: 'Playfair Display', 'Times New Roman', serif;
   font-style: italic;
   font-weight: 700;
-  font-variation-settings: 'wght' 700; /* 起始 700；揭示时 JS 代理补间到 900 */
+  font-variation-settings: 'wght' 700; /* 恒定 700（揭示补间已删，不再变化） */
   font-size: clamp(3.5rem, 11vw, 7.5rem); /* display 字级抬到 120px（2026-08-11：
      与正文 12.5px 比值 ≈ 9.6:1，贴近 Awwwards 体系 ≥10:1） */
   line-height: 1.25;
@@ -308,23 +264,14 @@ body:has(.hud[data-act='act3']) {
      padding-right 扩展背景覆盖区，0.1em ≈ 15px */
   padding-right: 0.1em;
   /* 暗态渐变 = 暗银（grok 2026-08-07 两轮验证：白/亮灰渐变 + 柔光仍像已点亮；
-     未通电门牌 = 暗银无发光，通电（.title-live）才回白亮渐变 + 光晕全开） */
+     未通电门牌 = 暗银无发光——通电类已删，恒定暗态） */
   background: linear-gradient(180deg, #7e93aa 25%, #46587a 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* 暗态光晕近乎无（只留字形轮廓的呼吸余量）—— 光晕是通电的资本，
-     揭示时 .title-live 全开 */
+  /* 暗态光晕近乎无（只留字形轮廓的呼吸余量）—— 通电类已删，恒定收敛 */
   filter: drop-shadow(0 0 6px rgb(var(--mono-rgb) / 0.05))
     drop-shadow(0 0 24px rgba(59, 108, 246, 0.03));
-  transition: filter 0.15s ease, background 0.15s ease;
-}
-
-/* 通电（揭示拍，prologue.js 加类）：白亮渐变 + 光晕全开 —— 「被看见的光有重量」 */
-.title-display.title-live {
-  background: linear-gradient(180deg, #ffffff 25%, #a8c4ff 100%);
-  filter: drop-shadow(0 0 18px rgb(var(--mono-rgb) / 0.45))
-    drop-shadow(0 0 110px rgba(59, 108, 246, 0.36));
 }
 
 /* 渐变文字必须落在字符级：wrapChars 把文字拆成 .prologue-char 后，
@@ -343,13 +290,8 @@ body:has(.hud[data-act='act3']) {
 }
 
 .title-display .hl {
-  /* 命令名高亮：附额外青色光晕（暗态收敛，通电随父级全开） */
+  /* 命令名高亮：附额外青色光晕（恒定暗态收敛；通电态已随揭示拍删除） */
   filter: drop-shadow(0 0 6px rgb(var(--mono-rgb) / 0.2));
-  transition: filter 0.15s ease;
-}
-
-.title-display.title-live .hl {
-  filter: drop-shadow(0 0 16px rgb(var(--mono-rgb) / 0.55));
 }
 
 /* 行2：门牌副文 —— 思源宋体 Heavy（悬念句层级；与钩子/点题句同一语境界）。
@@ -460,15 +402,15 @@ body:has(.hud[data-act='act3']) {
   color: rgba(232, 236, 244, 0.6);
 }
 
-/* 点题句：思源宋体 900（语境界最重字阶）。暗态在场（opacity≈0.25，
-   停顿必须有凝视对象）—— 不参与入场动画，从首帧暗态驻留；
-   揭示瞬间琥珀通电（.theme-live）。琥珀 = 全页唯一出现处（可自动核验：
-   琥珀 rgb(var(--act3-rgb)) 在序章段只出现在本规则与其注释）。
+/* 点题句：思源宋体 900（语境界最重字阶）。暗态在场（opacity≈0.2，
+   停顿必须有凝视对象）—— 不参与入场动画，从首帧暗态驻留。
+   2026-08-12：琥珀通电（.theme-live）随揭示拍整体删除（主人裁决「只有
+   一瞬间的亮」）—— 点题句恒定暗态，退场时被月球白光直接吞没，琥珀不再出现。
    右锚（2026-08-11 v2）：与左柱展品卡构成「左上 → 右下」对角分布；
    窄屏折两行后切回居中容器（≤720px 媒体查询） */
 .prologue-theme {
   /* 判决位：右锚（flex-end + 右 1.5vw）—— 卡位右移后同步右移，保持干净间隙；
-     对角流终点；字级下限抬到 2.2rem —— editorial overlay 32-42px 档，撑起琥珀高潮 */
+     对角流终点；字级下限抬到 2.2rem —— editorial overlay 32-42px 档 */
   align-self: flex-end;
   margin: 5vh 1.5vw 0 0;
   font-family: var(--font-serif);
@@ -478,33 +420,6 @@ body:has(.hud[data-act='act3']) {
   color: var(--text);
   text-align: center;
   opacity: 0.2; /* 暗态在场（grok 2026-08-07 验证：0.25 在部分屏偏中灰，再沉一级） */
-  transition: color 0.15s ease, text-shadow 0.15s ease;
-}
-
-/* 通电光尾（100~150ms）：琥珀文字 + 双层琥珀弥散 */
-.prologue-theme.theme-live {
-  opacity: 1;
-  color: var(--act3); /* 琥珀：全页唯一出现处 */
-  text-shadow: 0 0 24px rgb(var(--act3-rgb) / 0.55), 0 0 64px rgb(var(--act3-rgb) / 0.25);
-}
-
-/* 揭示时颗粒聚在点题句周围（300ms 脉冲淡入，之后保持在场） */
-.prologue-theme::after {
-  content: '';
-  position: absolute;
-  inset: -60% -90%;
-  z-index: -1;
-  background-image: var(--grain-uri);
-  mix-blend-mode: screen;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  -webkit-mask-image: radial-gradient(ellipse 62% 95% at 50% 50%, #000, transparent 72%);
-  mask-image: radial-gradient(ellipse 62% 95% at 50% 50%, #000, transparent 72%);
-  pointer-events: none;
-}
-
-.prologue-theme.theme-live::after {
-  opacity: 0.16;
 }
 
 /* 来源行（展签）：压一行贴视口右下（贴边定律，永不抢展品）。
@@ -708,9 +623,9 @@ body:has(.hud[data-act='act3']) {
   animation: none;
 }
 
-/* 停顿 80ms 真空（0.9~0.98s）：心跳星/圆环/颗粒全停一拍
-   （.paused 由 prologue.js 摆好完成时加、可走时移除） */
-.prologue.paused .fx-heart,
+/* 停顿 80ms 真空（0.9~0.98s）：心跳星/圆环全停一拍（.paused 由 prologue.js
+   摆好完成时加、可走时移除）。心跳星 = starfield shader 的 uT 冻结（JS 检查
+   .paused），此处只管 CSS 动画的环呼吸 */
 .prologue.paused .hold-ring-base,
 .prologue.paused .hold-core {
   animation-play-state: paused; /* 环心呼吸随边框一起停（真空一拍）；

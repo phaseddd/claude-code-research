@@ -1,34 +1,46 @@
 // ============================================================
-// 序章模块（prologue v2）：docs/PROLOGUE-REDESIGN.md 规格实施
+// 序章模块（prologue v3）：2026-08-12 主人裁决退场重构 —— 旧揭示拍+黑场整体推翻
 //
-// 3 秒时间轴（规格 §1）：
+// 3 秒时间轴（规格 §1 保留）：
 //   0~0.9s    一次摆好（标题逐字锐化保持暗 → 副题+钩子合拍 → 报告条目块
 //             整块落位 → 尾部轻落；点题句暗态在场、圆环常量首帧可见）
 //   0.9s      首行 ▌ 光标开始闪烁（CSS animation-delay 0.9s）
 //   0.9~0.98s 停顿 80ms 真空（心跳星/圆环全停一拍，.paused）
 //   0.98s     可走：圆环恢复交互（hold.setEnabled(true)）
 //   扫读      按住 1.25s 打满（最迟 2.23s 走；2026-08-11 键盘通道已移除）
-//   揭示 0.15s 首行聚焦 ‖ 点题句琥珀通电（全页唯一一次琥珀）‖ 标题字重通电
-//   黑场 0.15s 全页 opacity→0 留极弱星点；结束帧 = 层交换窗口
-//             （2D 卸载 + 3D 接管同一帧，onEnter）→ S1 面板落下（硬切）
+//   按住期    全屏 520 颗星（星点 500 + 心跳星 20，WebGL 粒子）恒星坍缩：
+//             壳层外圈先动 + 运动拉丝 + 核心挤压发光（starfield.js，主人裁决
+//             「不要这么平静，我们可是 WebGL 技术栈」）‖ 圆环同步坍缩 scale
+//             1→0.25 ‖ 两侧标注 e>0.5 后渐隐（修订 ⑤ 增密 + ⑦ WebGL 化）
+//   环满帧    星已全部收进环心 = 一点光团；月球（右上）发出白光 0.7s 扫向全屏
+//             （WebGL 光罩：径向扩散 + 白→青渐变，starfield.js；文本层随光
+//             扫过被洗掉）→ 终点 = 青雾罩全屏（2026-08-12 二次裁决：原 0.12s
+//             扩散太快 + 全白硬切 S1 无过渡）
+//   青雾峰值  层交换窗口（2D 卸载 + 3D 接管同一帧，onEnter）→ S1 从青雾中现出
+//   —— 旧揭示拍（首行聚焦/点题句琥珀通电/标题字重补间）与 0.15s 黑场整体删除：
+//     主人裁决「现在的那个转场特效不要，只有一瞬间的亮」；琥珀点题句随白光吞没
 //
 // 契约：
 //   mountPrologue({ uiEl, onEnter = null }) → { dispose }
 //   - uiEl      DOM 层容器（#ui，pointer-events: none，由 main.js 创建）
-//   - onEnter   黑场结束帧调用（进入引擎，bootTimeline 由 main.js 负责）
+//   - onEnter   白光峰值帧调用（进入引擎，bootTimeline 由 main.js 负责）
 //   - 月球 = WebGL 真球体网格（2026-08-11 起无降级路径：本 demo 全程要求 WebGL2，
 //     不支持即白屏，见 main.js）
 // ============================================================
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { createHoldButton } from './hold.js'
+import { createStarfield } from './starfield.js'
+import { disposeRenderer } from './utils.js'
 
 // 规格 §1 时间轴常量（秒）
-const T_REVEAL = 0.15 // 揭示拍（退场 0~0.15s）
-const T_BLACKOUT = 0.15 // 黑场（退场 0.15~0.30s；层交换窗口）
 const T_PAUSE = 0.08 // 停顿 80ms 真空（0.9~0.98s）
 const T_READY = 0.9 + T_PAUSE // 可走时刻（0.98s）
 const HOLD_SECONDS = 1.25 // 按住时长（规格 §5 鼠标/触屏通道）
+// 月球布光（2026-08-12 主人裁决：闪白的光源 = 月球；WebGL 光罩在 starfield.js）
+// 2026-08-12 二次裁决：0.12s 扩散太快看不出扫过过程 + 全白硬切 S1 青色无过渡
+// → 0.55s 扩散 + 白→青渐变；三次裁决（2026-08-12）：0.55s → 0.7s 更舒服
+const T_BURST = 0.7
 
 // 报告条目（2026-08-11 主人逐条裁决终稿，六条）：
 //   首行 = 特殊条目「38% 的摩擦，同一个原因」—— 数值取主人本机真实月报校准
@@ -44,12 +56,10 @@ const REPORT_LINES = [
   '600+ 次 Edit 工具调用，背后原因是…',
 ]
 const REPORT_OPACITY = [1, 0.78, 0.6, 0.44, 0.3, 0.18] // 透明度渐进（首行 100% → 末行 18%；
-// 步长递减的收敛曲线：前几档快、末档沉进背景，首末差 0.82 保证阶梯一眼可见）
+// 步长递减的收敛曲线：前几档快、末档沉进背景，首末差 0.82 保证阶梯一眼可见；
+// 恒定基线（原「揭示时压暗 50%」已随揭示拍删除，2026-08-12））
 
-// 星点布局：固定种子 LCG 伪随机（每次加载一致，可截图核验；数量见规格文档
-// PROLOGUE-REDESIGN.md §4 —— 2026-08-11 翻倍：星点 160 + 心跳星 10）
-let _seed = 42
-const rnd = () => ((_seed = (_seed * 1664525 + 1013904223) % 4294967296) / 4294967296)
+// 星点固定种子 LCG 已随 DOM 星迁移移入 starfield.js（唯一持有者，2026-08-12）
 
 // 三维月球（2026-08-11：WebGL 真·球体网格，替代 2D canvas 球面投影）：
 //   结构 = tilt 组（斜轴：右上北极 → 左下南极，23.4°，一个 rotation 完事）
@@ -109,9 +119,7 @@ function createMoonMesh(container, root) {
     geo.dispose()
     mat.dispose()
     mat.map?.dispose()
-    renderer.dispose()
-    renderer.forceContextLoss() // three 的 dispose 不释放 context，显式丢弃防反复进序章耗尽
-    renderer.domElement.remove()
+    disposeRenderer(renderer) // 三段式释放契约（utils，防反复进序章耗尽 context）
   }
 }
 
@@ -144,7 +152,7 @@ export function mountPrologue({ uiEl, onEnter = null }) {
            报告卡 = 完整展品：条目区 + 分隔线 + 生成过程单句） -->
       <div class="prologue-steps" aria-label="报告生成过程">读你一个月的会话记录，写成七章，归纳成一份 HTML 报告。</div>
     </div>
-    <!-- 点题句：暗态在场（停顿必须有凝视对象），揭示时琥珀通电 -->
+    <!-- 点题句：暗态在场恒定（停顿必须有凝视对象；琥珀通电已随揭示拍删除） -->
     <p class="prologue-theme">报告是它写的。句句说的是你。</p>
     <!-- 来源行（展签）：压一行贴右，锚点契约不可删字 -->
     <p class="prologue-source">基于 @cometix/claude-code 2.1.209 静态源码分析 · 配套知识页：<a class="prologue-link" href="../../analysis/mechanisms/claude-code-insights-slash-command.md" target="_blank" rel="noopener">机制 · 命令全程解析</a> · <a class="prologue-link" href="../../analysis/concepts/claude-code-insights-prompts.md" target="_blank" rel="noopener">概念 · 内嵌提示词全文</a></p>
@@ -166,30 +174,10 @@ export function mountPrologue({ uiEl, onEnter = null }) {
   const fxEl = document.createElement('div')
   fxEl.className = 'prologue-fx'
   root.prepend(fxEl)
-  const frag = document.createDocumentFragment()
-  for (let i = 0; i < 160; i++) {
-    // 星点 160 颗（2026-08-11 翻倍，~25% 为 3px 亮星）：散布全屏，亮度微差
-    const s = document.createElement('span')
-    s.className = 'fx-star'
-    s.style.left = `${(rnd() * 96 + 2).toFixed(1)}%`
-    s.style.top = `${(rnd() * 84 + 4).toFixed(1)}%`
-    s.style.opacity = (0.1 + rnd() * 0.5).toFixed(2)
-    if (rnd() > 0.75) {
-      s.style.width = '3px'
-      s.style.height = '3px'
-    }
-    frag.appendChild(s)
-  }
-  for (let i = 0; i < 10; i++) {
-    // 心跳星 10 颗（2026-08-11 翻倍）：1.5s 周期呼吸，相位错开 = 将死未死的灯丝
-    const h = document.createElement('span')
-    h.className = 'fx-heart'
-    h.style.left = `${(rnd() * 96 + 2).toFixed(1)}%`
-    h.style.top = `${(rnd() * 84 + 4).toFixed(1)}%`
-    h.style.animationDelay = `-${(rnd() * 1.5).toFixed(2)}s`
-    frag.appendChild(h)
-  }
-  fxEl.appendChild(frag)
+  // 星场（2026-08-12 恒星坍缩，WebGL 粒子）：DOM 容器均匀缩放保留矩形轮廓
+  // =「方框状缩进去」（仿射变换的必然），主人裁决换 GPU —— 520 星一个 draw
+  // call，坍缩（外圈先动/拉丝/核心发光）全在顶点着色器（starfield.js）
+  const starfield = createStarfield({ container: fxEl, pausedEl: root })
 
   // 月球（右上角补白，2026-08-11）：WebGL 真球体网格；挂在 fx 视差层内
   // → 随指针视差 ±6px 一起微动；贴图本地资产，无降级路径
@@ -225,9 +213,8 @@ export function mountPrologue({ uiEl, onEnter = null }) {
   const hookEl = root.querySelector('.prologue-hook')
   const reportEl = root.querySelector('.prologue-report')
   const reportLines = [...root.querySelectorAll('.report-line')]
-  const cursorEl = root.querySelector('.line-cursor')
-  const themeEl = root.querySelector('.prologue-theme')
   const sourceEl = root.querySelector('.prologue-source')
+  // cursorEl/themeEl 引用已随旧揭示拍整体删除（2026-08-12 退场重构）
   const labelEls = [...root.querySelectorAll('.hold-label')]
   const holdEl = root.querySelector('.prologue-hold')
 
@@ -277,7 +264,42 @@ export function mountPrologue({ uiEl, onEnter = null }) {
       hold.setEnabled(true)
     }, [], T_READY)
 
-  // ---------- 4. 按住交互 ----------
+  // ---------- 4. 按住交互（2026-08-12 重构：按住 = 星收环坍缩的驱动源） ----------
+  // 全屏 520 颗星（星点 500 + 心跳星 20，统一处理——主人视角「只有亮一点和
+  // 几乎看不见的区别」）按进度向环心收缩：位移 = 进度^1.8（前缓后急 = 吸入感）
+  // ‖ 环同步坍缩 scale 1→0.25（保留形态到最后一帧，白光从「环心」炸出更有来源感）
+  // ‖ 两侧标注 e>0.5 后渐隐。
+  // 实现 = starfield（WebGL 粒子，恒星坍缩全在 shader，见 1.5 节生成处注释）。
+  // 2026-08-12 主人裁决「原速原样恢复」：回退逻辑在 hold.js 的 progress 本身
+  // （续接窗口超时后 progress 以 1/duration 线性回退，环弧同步退、星沿收缩
+  // 曲线镜像返回，按住即从当前位置续走）—— 本层只是 progress → 视觉的纯函数
+  // 映射，无中间状态（原 lerp 渲染循环已删，满环帧无需强制落定）
+  const holdHit = root.querySelector('.hold-hit')
+  // 环心屏幕中心缓存（2026-08-12 simplify：热路径每帧 getBoundingClientRect 是
+  // 冗余读取 —— transform 缩放走合成器、不改变布局矩形，仅 resize 会变；
+  // 首次惰性取 + resize 刷新，每帧只用便宜的视差折算）
+  let ringCX = 0
+  let ringCY = 0
+  const refreshRingCenter = () => {
+    const r = holdHit.getBoundingClientRect()
+    ringCX = r.left + r.width / 2
+    ringCY = r.top + r.height / 2
+  }
+  // 屏幕坐标 → fxEl 局部坐标（fxEl = fixed inset −20 + 视差 translate(px*6, py*6)；
+  // applyProgress 与 runBurst 共用，2026-08-12 simplify）
+  const toFx = (sx, sy) => ({ x: sx + 20 - px * 6, y: sy + 20 - py * 6 })
+  const applyProgress = (p) => {
+    if (!ringCX) refreshRingCenter() // 首次惰性（入场完成、布局稳定后才可能按住）
+    const e = p ** 1.8 // 前缓后急：吸入感（与 hold 回退同源 = 原速原样）
+    const c = toFx(ringCX, ringCY)
+    starfield.setCenter(c.x, c.y) // 坍缩中心（恒星坍缩的引力点）
+    starfield.setE(e) // 收缩程度（外圈先动/拉丝/核心发光全在 shader）
+    holdHit.style.transform = `scale(${1 - 0.75 * e})` // 环坍缩
+    const labelO = 1 - Math.max(0, (e - 0.5) / 0.5) // 标注渐隐（环缩了字还挂着会穿帮）
+    labelEls.forEach((l) => (l.style.opacity = String(labelO)))
+  }
+  window.addEventListener('resize', refreshRingCenter)
+
   // const hold：入场 timeline 的 0.98s call 引用它，闭包在赋值后才执行（无 TDZ）
   const hold = createHoldButton({
     el: holdEl,
@@ -285,71 +307,51 @@ export function mountPrologue({ uiEl, onEnter = null }) {
     // 0.98s 可走前忽略一切输入（摆好期间禁点防误触，
     // setEnabled(true) 由入场 timeline 的 0.98s call 执行）
     enabled: false,
+    onProgress: applyProgress, // 进度 → 视觉纯函数映射（原速回退由 hold 驱动）
     onComplete: () => {
       if (done) return
       done = true
-      runExit()
+      runBurst()
     },
   })
   let done = false // 防重复触发
-  let exitTween = null // 黑场动画引用（dispose 时释放）
+  let burstTween = null // 月球布光动画引用（dispose 时释放）
 
-  // ---------- 5. 退场：揭示 0.15s → 黑场 0.15s（规格 §1/§6） ----------
-  // 揭示拍 = 同一拍三件事（被看见的揭示瞬间）：
-  //   首行聚焦（青色辉光 + 其余条目压暗 50% + 光标消失）
-  //   ‖ 点题句琥珀通电（全页唯一一次琥珀，.theme-live 类切换）
-  //   ‖ 标题字重通电（可变字重 700→900 + 亮度 40→75%）
-  // 黑场：全页 opacity→0（power2.in），fx 留 12% 极弱星点 = 面板落点坐标；
-  //   结束帧 = 层交换窗口（2D 卸载 + 3D 接管同一帧）→ S1 面板落下
-  function runExit() {
-    const firstLine = reportLines[0]
-    const restLines = reportLines.slice(1)
-    const wgt = { w: 700 } // 标题字重代理（gsap 不能直接补间 font-variation-settings 字符串）
-    const reveal = gsap.timeline({ defaults: { duration: T_REVEAL, ease: 'power2.out' } })
-    reveal
-      // 首行聚焦：青色辉光
-      .to(firstLine, { textShadow: '0 0 16px rgba(125,211,252,0.85), 0 0 40px rgba(59,108,246,0.45)' }, 0)
-      // 其余条目压暗 50%（在渐进基线上减半）
-      .to(restLines, { opacity: (i) => REPORT_OPACITY[i + 1] * 0.5 }, 0)
-      // 光标消失
-      .set(cursorEl, { opacity: 0 }, 0)
-      // 点题句琥珀通电（亮度 + 琥珀色/光晕由 .theme-live 的 CSS transition 接管）
-      .to(themeEl, { opacity: 1 }, 0)
-      .call(() => themeEl.classList.add('theme-live'), [], 0)
-      // 标题通电：亮度 40→75% + 字重 700→900 + 光晕全开（「被看见的光有重量」）
-      .to(titleChars, { opacity: 0.75 }, 0)
-      .call(() => titleEl.classList.add('title-live'), [], 0)
-      .to(
-        wgt,
-        {
-          w: 900,
-          duration: T_REVEAL,
-          onUpdate: () => {
-            titleEl.style.fontVariationSettings = `'wght' ${Math.round(wgt.w)}`
-          },
-        },
-        0
-      )
-      // 颗粒 300ms 脉冲（一次性 CSS 动画类）
-      .call(() => root.classList.add('grain-pulse'), [], 0)
-      // 黑场（揭示完成后开始）：
-      .call(
-        () => {
-          exitTween = gsap.to(root, {
-            opacity: 0,
-            duration: T_BLACKOUT,
-            ease: 'power2.in',
-            onComplete: () => {
-              dispose() // 2D 卸载
-              if (onEnter) onEnter() // 3D 接管（同一帧）→ S1 面板落下（硬切）
-            },
-          })
-          // 留极弱星点 = 面板落点坐标（fx 不停在 0，黑场期间仍可见微光）
-          gsap.to(fxEl, { opacity: 0.12, duration: T_BLACKOUT, ease: 'power2.in' })
-        },
-        [],
-        T_REVEAL
-      )
+  // ---------- 5. 退场：月球布光 0.7s 白→青 → 青雾峰值层交换（2026-08-12 主人裁决） ----------
+  // 旧揭示拍（首行聚焦/琥珀通电/标题字重）与 0.15s 黑场整体删除 —— 主人：
+  // 「现在的那个转场特效不要，不要花里胡哨，只有一瞬间的亮」。
+  // 布光 = starfield GPU 光罩（第二 mesh，2026-08-12 二次裁决 WebGL 化）：
+  // 白光以月球为源点径向扩散 0.7s（power1.in），颜色白→青，终点 = 青雾罩全屏
+  // → 峰值帧同一帧 dispose（2D 卸载，含星场/月球/光罩）+ onEnter（3D 接管）
+  // → S1 从青雾中现出（硬切，色彩连续）
+  function runBurst() {
+    // 满环帧状态已由 hold 最后 tick 精确落定（progress=1 → onProgress → applyProgress(1)）
+    // 月球 → fxEl 局部 → NDC（光罩光源源点；视差 ±6px 在 0.7s 内可忽略）
+    const rect = moon.getBoundingClientRect() // 月球在 fxEl 视差层内，rect 含视差
+    const c = toFx(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    const vw = window.innerWidth + 40
+    const vh = window.innerHeight + 40
+    const moonUV = { x: (c.x / vw) * 2 - 1, y: 1 - (c.y / vh) * 2 }
+    // 文本层（标题/报告卡/点题句/来源/标注）随布光淡出 =「被光洗掉」。
+    // 2026-08-12 simplify 备注：DOM 序 stagger（视觉验收定稿版），非「光扫到的
+    // 空间序」—— 有意保留，改顺序需重新过视觉验收；时长 0.4s 在 0.7s 布光内完成
+    gsap.to(
+      [...root.children].filter((el) => !el.classList.contains('prologue-fx')),
+      { opacity: 0, duration: 0.4, stagger: 0.04, ease: 'power1.in' }
+    )
+    // GPU 光罩扩散（starfield 第二 mesh）：白→青渐变在扩散中完成，
+    // 终点 = 青雾罩全屏 → 峰值帧层交换，S1 从青雾中现出（色彩连续）
+    const burst = { p: 0 }
+    burstTween = gsap.to(burst, {
+      p: 1,
+      duration: T_BURST,
+      ease: 'power1.in', // 扩散加速：光从月球「冲」向全屏的动能感
+      onUpdate: () => starfield.setBurst(burst.p, moonUV),
+      onComplete: () => {
+        dispose() // 2D 卸载
+        if (onEnter) onEnter() // 3D 接管（同一帧）→ S1 面板落下（硬切）
+      },
+    })
   }
 
   // ---------- 6. 清理：移除 DOM 并释放所有监听/动画 ----------
@@ -358,7 +360,9 @@ export function mountPrologue({ uiEl, onEnter = null }) {
     if (disposed) return
     disposed = true
     entrance?.kill() // 入场动画
-    exitTween?.kill() // 黑场动画
+    burstTween?.kill() // 月球布光动画
+    window.removeEventListener('resize', refreshRingCenter) // 环心缓存刷新
+    starfield.dispose() // 星场 GL 释放（disposeRenderer 契约）
     hold.dispose() // 按住组件自清理
     if (parallaxRaf) cancelAnimationFrame(parallaxRaf) // 视差 rAF
     moonStop?.() // 月球自转 rAF

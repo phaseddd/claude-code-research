@@ -8,7 +8,6 @@
 // 序章不在时间轴内（DOM 层独立管理）；按住完成 → skipTo('s1') 落入第一幕
 import './style.css'
 import * as THREE from 'three'
-import gsap from 'gsap'
 import { mountPrologue } from './prologue.js'
 import { createScroll } from './scroll.js'
 import { createTimeline } from './timeline.js'
@@ -18,7 +17,7 @@ import { createS2, S2_CAM_ENTER, S2_LOOK_ENTER } from './scenes/s2.js'
 import { createS3 } from './scenes/s3.js'
 import { createHud, ACT_TITLES } from './hud.js'
 import { STATS } from './data/sessions.js'
-import { easeInOutSine, rampCameraPath } from './utils.js'
+import { easeInOutSine, rampCameraPath, disposeRenderer } from './utils.js'
 
 // 分层容器：#scene（3D 层，z-index 0）与 #ui（DOM 层，z-index 10），
 // 统一挂到 index.html 的 #app 应用根（#app 的 fixed inset:0 规则由此生效）
@@ -274,13 +273,12 @@ function bootTimeline() {
   })
   // 落位第一幕第一站（skipTo 复位位置；创建时已 enter，此处幂等）
   timeline.skipTo('s1')
-  // 黑场三段式（v2 规格 PROLOGUE-REDESIGN.md §6 硬切）：bootTimeline 在序章
-  // 黑场结束帧被调用（prologue.js onEnter），场景先置 0（黑场）→ S1 面板
-  // 从 y=-24 落下是唯一事件入场（s1.js 自带下落动画，序章只负责交接时机）。
-  // 没有「引擎淡入」：场景层淡入并行存在 = 背景 0.8-1s 慢速衬底（无 delay，
-  // 黑场结束帧即开始与面板落下并行），不再是「等场景亮」的旧节奏
-  sceneEl.style.opacity = '0'
-  gsap.to(sceneEl, { opacity: 1, duration: 0.9 })
+  // 转场硬切（2026-08-12 主人裁决）：序章环满 → 月球布光 0.7s 白→青扫屏 →
+  // 白光峰值帧调用本函数（prologue.js onEnter），S1 面板从 y=-24 落下是唯一
+  // 事件入场（s1.js 自带下落动画，序章只负责交接时机）。
+  // 场景层直接全亮：旧 0.9s 慢淡入随黑场配套删除 —— 白光消失即 S1 全亮，
+  // 「瞬间切到S1」的保证（布光在序章侧掩盖层交换，引擎无需任何淡入）
+  sceneEl.style.opacity = '1'
 }
 
 // 滚动帧 → 时间轴（scroll 只在引擎阶段存在：序章阶段未创建，
@@ -311,9 +309,7 @@ function backToPrologue() {
   shared.river?.dispose()
   shared.river = null
   window.removeEventListener('resize', onResize)
-  renderer.dispose()
-  renderer.forceContextLoss() // three dispose 不释放 context；反复「重新体验」防耗尽
-  renderer.domElement.remove()
+  disposeRenderer(renderer) // 三段式释放契约（utils；反复「重新体验」防耗尽 context）
   renderer = null
   shared.scene = null
   shared.camera = null

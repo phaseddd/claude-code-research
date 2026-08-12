@@ -72,11 +72,6 @@ const HIT_INFO = (() => {
   const oldest = [...facets].sort((a, b) => b.ageDays - a.ageDays).slice(0, 3)
   return oldest.reduce((a, s) => a + s.tokens, 0) / 1000 // = 54
 })()
-// 预热信息量(拍3 analyzing 时河轻微苏醒):vh 1.0 → 河宽 ≈0.42(最窄 0.25 与
-// 注入全量 1.21 之间)。0.5 实测「像引擎点了一下火就熄」(影评人 2026-08-05),
-// 1.0 让「引擎开始跑」可感,仍远低于注入全量,拍4 爆发不稀释;合成,措辞诚实
-const PREWARM_VH = 1.0
-
 // 字符光晕(简报 §4 终端细节):唯一亮色焦点用;EMBER 白 = river.js 源头色(单一来源)
 const EMBER = RIVER_COL.ember.getStyle()
 const GLOW = '0 0 6px rgba(122,210,255,0.35), 0 0 14px rgba(74,168,255,0.15)'
@@ -230,10 +225,8 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
     let pos = 0
     const typeChar = () => {
       typedEl.textContent += TYPED_CMD[pos]
-      if (pos === 0) {
-        cursorEl.classList.add('is-steady') // 输入中停闪常亮(简报 §4 块状光标)
-        river.pulseAt(0, 0.5) // 首字输入:源头 L3 微闪 hint(简报 §4 拍1)
-      }
+      if (pos === 0) cursorEl.classList.add('is-steady') // 输入中停闪常亮(简报 §4 块状光标)
+      // 2026-08-12:原源头微闪(hint)随「拍4 前河零存在」删除 —— 河隐藏期不可见
       pos++
     }
     let t = 0
@@ -261,27 +254,18 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
       // —— hit —— 闪 80ms 硬状态边沿(简报 §5「1~3 帧 flash,不用 600ms soft fade」)
       beats.set(hitEl, { color: EMBER, opacity: 1, textShadow: GLOW_HIT }, rt + 0.02)
       beats.set(hitEl, { color: HIT_DIM, opacity: 0.55, textShadow: 'none' }, rt + 0.1)
-      // 每次 hit:源头增强一档(简报 §4 拍2;0.6 —— 影评人「预热太绅士,再狠一点」)
-      beats.call(() => river.pulseAt(0, 0.6), [], rt + 0.02)
+      // 2026-08-12:原「每次 hit 源头增强一档」随「拍4 前河零存在」删除 ——
+      // 河隐藏期脉冲不可见,「沉睡→预热→注入」三级改为「隐没→喷发」两级;
+      // 拍4 的源头脉冲(见下)是唯一保留的河反应
     })
     const lastFlashEnd = rowStart + 0.08 + 2 * 0.055 + 0.1
-    // 三次完成:源头拉满 + ember 脉冲一次(简报 §4 拍2)
-    beats.call(() => river.pulseAt(0, 1), [], lastFlashEnd + 0.15)
 
     // ---- 拍3:analyzing 浮现(命令表结束后 120~180ms,勿过早)+ 确定性假进度 ----
     const anaT = lastFlashEnd + 0.18
     beats.to(analyzingEl, { opacity: 1, duration: 0.12 }, anaT)
-    // 河预热(grok 观众评审 2026-08-05:「河是什么」前半段无锚点,像装饰):
-    // analyzing 浮现同帧,河轻微苏醒(微宽微快)——「引擎开始干活,河开始有反应」,
-    // 与拍4 全量注入形成「沉睡 → 预热 → 注入」三级,观众不再等到 100% 才懂河
-    beats.call(
-      () => {
-        river.setInfoVolume(PREWARM_VH)
-        river.setFlow('warm')
-      },
-      [],
-      anaT
-    )
+    // 拍4 前河零存在(2026-08-12 主人裁决「进度条满的那一刻,星河才出现」):
+    // 原预热(河微宽 0.42 + setFlow('warm'))与「沉睡→预热→注入」三级整体删除,
+    // 河在 enter 置隐藏,拍4 揭幕同帧恢复 —— analyzing 期「引擎在跑」由进度条/数字承担
     const progT = anaT + 0.1
     // 确定性假进度 0→62% easeInOut(演出化调整 2026-08-06,演出基线
     // 「62% 进度修复:观众亲眼看到进度从零走起」):原 0.4s linear 太快,
@@ -292,42 +276,48 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
     // 改目标/时长只动这两处(原 62/1.2 手抄多处,漏改则进度与数字跳变、拍4 脱节)
     const PROG_TARGET = 62
     const PROG_CLIMB = 1.2
+    // 拍4 注入时长(2026-08-12 simplify: 原 1.2 在河宽/进度条/数字/流速/顶点五处
+    // 手抄 —— 单点命名与 PROG_CLIMB 同款纪律,漏改则因果脱节)
+    const INJECT_SECONDS = 1.2
     beats.to(fillEl, { width: `${PROG_TARGET}%`, duration: PROG_CLIMB, ease: 'power1.inOut' }, progT)
     beats.to(pctEl, { opacity: 1, duration: 0.05 }, progT)
     // 数字与进度条同步爬升(DOM 初始 62% 在 opacity 0 下不可见,首帧即被 0% 覆盖)
     tweenPct(pctEl, 0, PROG_TARGET, PROG_CLIMB, 'power1.inOut', progT)
 
-    // ---- 拍4 河亮:视线焦点从终端移到河(简报 §4 拍4) ----
-    // 叙事(2026-08-05 主人实测「不明所以」修复):进度条 62→100 与河变宽同步
-    // 走完 ——「加载完成的那一刻,数据注入河床」因果可视;宽度补间 1.2s
-    // (原瞬跳 0.6→1.21 突兀;0.8s 有中段「腰部鼓起」瞬态,1.2s 定稿);
-    // 注入前锋让源头先宽、波浪顺流而下(「数据从终端流入河」的物理)
-    // 停顿 0.35s(原 0.55:grok 观众评审「停顿意义不明,像节奏漏拍」;
-    // 预热后停顿有了内容 —— 河在微宽流动,停顿是「引擎在跑」的呼吸而非空档)
-    // PROG_CLIMB = 拍3 进度 0→62 的补间时长(演出化调整后从 0.4 拉长,拍4 起点随之后移)
+    // ---- 拍4 河亮:视线焦点从终端移到河(简报 §4 拍4;2026-08-12 重构) ----
+    // 叙事:进度条 62→100 与河变宽同步走完 ——「加载完成的那一刻,河出现」;
+    // 揭幕 = 隐藏解除 + 注入前锋同帧(源头先宽、波浪顺流而下,「数据从终端流入河」);
+    // 宽度补间 1.2s 从 0 起(原预热基线 0.42 已删 ——「沉睡→预热→注入」三级改为
+    // 「隐没→喷发」两级,主人裁决「星河才出现-喷发-流动起来」);
+    // 停顿 0.35s = 62% 停驻的呼吸(进度爬升完成 → 揭幕的间隙,原预热参照已删除)
+    // PROG_CLIMB = 拍3 进度 0→62 的补间时长(拍4 起点随之后移)
     const T0 = progT + PROG_CLIMB + 0.35
-    // 记录注入时刻（前锋从源头随河传播）
-    beats.call(() => river.injectInfoVolume(), [], T0)
-    // 宽度:平滑补间到信息量全量(简报 §3.3 河宽随信息量,连续量)
+    // 拍4 揭幕(2026-08-12):隐藏解除 + 注入前锋同帧 —— 河「出现-喷发」于此帧
+    beats.call(() => {
+      river.setHidden(false)
+      river.injectInfoVolume()
+    }, [], T0)
+    // 宽度:平滑补间到信息量全量(简报 §3.3 河宽随信息量,连续量);
+    // 起点 = 0(预热已删,getInfoVolume 未被写过 → 初始 0 = W_MIN 最窄)
     const vh = { v: river.getInfoVolume() }
     beats.to(
       vh,
       {
         v: HIT_INFO, // 命中会话信息量 ≈ 54(最老三 facet 会话 token 和 / 1000)
-        duration: 1.2,
+        duration: INJECT_SECONDS,
         ease: 'power2.out',
         onUpdate: () => river.setInfoVolume(vh.v),
       },
       T0
     )
     // 进度条 62→100 与宽度同起点同长同 ease(「加载完成 → 数据注入」因果)
-    beats.to(fillEl, { width: '100%', duration: 1.2, ease: 'power2.out' }, T0)
-    // 拍4 数字(1.2 = 注入补间时长,与河宽同长;tweenPct 共享手法)
-    tweenPct(pctEl, PROG_TARGET, 100, 1.2, 'power2.out', T0)
+    beats.to(fillEl, { width: '100%', duration: INJECT_SECONDS, ease: 'power2.out' }, T0)
+    // 拍4 数字(INJECT_SECONDS = 注入补间时长,与河宽同长;tweenPct 共享手法)
+    tweenPct(pctEl, PROG_TARGET, 100, INJECT_SECONDS, 'power2.out', T0)
     // 流速错峰:宽度补间完成后 +0.1s 才「唰」(影评人 2026-08-05 两轮:0.35s/0.7s
-    // 时宽度还在爬升,「宽波」和「加速」被读成一起涨;补间 1.2s 完成后宽度已到位,
+    // 时宽度还在爬升,「宽波」和「加速」被读成一起涨;补间完成后宽度已到位,
     // 观众先读「信息量上来了」,再整体加速,两拍可分)
-    beats.call(() => river.setFlow('s1'), [], T0 + 1.2 + 0.1)
+    beats.call(() => river.setFlow('s1'), [], T0 + INJECT_SECONDS + 0.1)
     // 走满顶点(影评人 2026-08-05:「analyzing 走满的那帧必须是因果顶点」):
     // 进度条 100% 瞬间 —— 源头再白闪一次(注入完成)+ 面板斩截闪
     beats.call(
@@ -336,7 +326,7 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
         flashTerm()
       },
       [],
-      T0 + 1.2
+      T0 + INJECT_SECONDS
     )
 
     return beats
@@ -358,6 +348,13 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
       camera.lookAt(CAM_LOOK_START)
       // 河段窗口:S1 带(出生→右缘);重入时重置(旧值可能是 S3 的全河)
       river.setVisibleRange(...RANGE_S1)
+      // 整河隐藏(2026-08-12 主人裁决):河在拍4 进度 100% 前零存在,
+      // 揭幕 = setHidden(false) + injectInfoVolume 同帧(拍4 T0)
+      river.setHidden(true)
+      // 拍4 起点确定性(2026-08-12 simplify):重入 S1 时残留 S2/S3 的全量信息量
+      // (≈1.52),拍4「从最窄喷发」不成立 —— enter 显式归 0(与 setVisibleRange
+      // 同款「enter 建立完整状态」纪律,原 PREWARM 锚点删除后的替代)
+      river.setInfoVolume(0)
 
       buildDom()
       anchor()
@@ -396,6 +393,9 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
       tl?.kill()
       window.removeEventListener('resize', onResize)
       // 河段窗口交接由 s2 enter 自行设置（幂等；本站不再写 HANDOFF，删冗余）
+      // 隐藏恢复默认(2026-08-12 simplify 生命周期纪律):快速跳过 S1 时若拍4 未走,
+      // 隐藏态会漏进 g1/S2 —— teardown 恢复 false 兜底(enter 建立完整状态的对称)
+      river.setHidden(false)
       root?.remove()
     },
   }

@@ -1,7 +1,9 @@
 // hold.js —— TAP HOLD 按住交互组件
 // 长按 .hold-hit 填充 SVG 进度环，按满 duration 秒触发 onComplete；
-// 松开后 500ms 内再按住可续接进度，超时则进度归零。
-// 参照零大学 Tg 类机制简化：回落直接归零，不做衰减动画（KISS）。
+// 松开后 500ms 内再按住可续接进度。
+// 2026-08-12 主人裁决「原速原样恢复」：续接窗口超时后 progress 以 1/duration
+//   线性回退（与前进同速同轨迹，环弧同步退、消费者沿收缩曲线镜像返回），
+//   回退中按住即从当前位置续走，零跳变 —— 原「回落直接归零」已废除。
 //
 // v2 扩展（序章规格 PROLOGUE-REDESIGN.md §5 交互通道）：
 //   enabled=false  忽略一切输入（序章 0.98s「可走」前禁点），setEnabled() 开启
@@ -19,6 +21,7 @@ export function createHoldButton({
   duration = 2.5,
   enabled = true, // false 时忽略一切输入（序章摆好期间禁点）
   onComplete = null,
+  onProgress = null, // 每帧进度回调 0~1（2026-08-12：序章星收缩/环坍缩的单一驱动源）
 }) {
   const hitEl = el.querySelector('.hold-hit')
   // 进度弧（.hold-ring-progress）；底环 .hold-ring-base 是常驻引导环，不动它
@@ -33,8 +36,10 @@ export function createHoldButton({
     hitEl.setAttribute('aria-live', 'polite')
   }
 
-  let progress = 0 // 当前进度 0~1
+  let progress = 0 // 当前进度 0~1（按住推进 / 续接窗口超时后原速回退）
   let rafId = null // 推进循环的 rAF id
+  let settleRaf = null // 回退循环的 rAF id（2026-08-12：原速原样恢复）
+  let settleLast = 0 // 回退循环的上一帧时间戳（dt 计算）
   let downTime = 0 // 本次（或续接）按下时刻
   let activePointerId = null // 多指保护：只认第一个指针
   let cancelTimer = null // 500ms 续接窗口的定时器
@@ -55,6 +60,10 @@ export function createHoldButton({
   // 撤销全部监听与定时器；完成或销毁时调用，避免泄漏
   const cleanup = () => {
     stopLoop()
+    if (settleRaf !== null) {
+      cancelAnimationFrame(settleRaf)
+      settleRaf = null
+    }
     if (cancelTimer !== null) {
       clearTimeout(cancelTimer)
       cancelTimer = null
@@ -78,12 +87,25 @@ export function createHoldButton({
     if (onComplete) onComplete()
   }
 
-  // 续接窗口超时：进度直接归零
+  // 续接窗口超时：进度以 1/duration 线性回退（2026-08-12 主人裁决「原速原样
+  // 恢复」）—— 与前进同速，环弧与星收缩沿收缩曲线镜像返回；回退中按住即从
+  // 当前位置续走（startHold 打断），无跳变。progress 单一来源不变
+  const settleTick = (t) => {
+    settleRaf = null
+    const dt = (t - settleLast) / 1000
+    settleLast = t
+    progress = Math.max(0, progress - dt / duration)
+    setRing(progress)
+    onProgress?.(progress)
+    if (progress > 0) settleRaf = requestAnimationFrame(settleTick)
+  }
   const cancelNow = () => {
     if (settled) return
     cancelTimer = null
-    progress = 0
-    setRing(0)
+    if (progress > 0) {
+      settleLast = performance.now()
+      settleRaf = requestAnimationFrame(settleTick)
+    } // progress 已 0 则无需任何动作（视觉已在原位）
   }
 
   // 每帧按按下以来经过的时间推进进度；达标即完成
@@ -91,6 +113,7 @@ export function createHoldButton({
     rafId = null
     progress = clamp01((now - downTime) / (duration * 1000))
     setRing(progress)
+    onProgress?.(progress)
     if (progress >= 1) {
       finishComplete()
       return
@@ -107,6 +130,11 @@ export function createHoldButton({
     if (cancelTimer !== null) {
       clearTimeout(cancelTimer)
       cancelTimer = null
+    }
+    // 回退中按住：打断回退，从当前进度直接续走（2026-08-12 原速恢复的配套）
+    if (settleRaf !== null) {
+      cancelAnimationFrame(settleRaf)
+      settleRaf = null
     }
     // 把按下时刻回拨到"当前进度对应的时间点"，进度无缝续走
     downTime = performance.now() - progress * duration * 1000
