@@ -66,7 +66,7 @@ export function createHud({ uiEl, onSelect = null, onRestart = null } = {}) {
   // 节点按钮：序号字符本身作图形（字即图形）；--i 供入场 stagger 的 animation-delay
   const nodesHtml = STATION_NAMES.map(
     (name, i) =>
-      `<button class="hud-node" type="button" data-node="${i + 1}" data-title="${i + 1} · ${name}" aria-label="跳转到第 ${i + 1} 站 ${name}" style="--i:${i}">${i + 1}</button>`
+      `<button class="hud-node" type="button" tabindex="-1" data-node="${i + 1}" data-title="${i + 1} · ${name}" aria-label="跳转到第 ${i + 1} 站 ${name}" style="--i:${i}">${i + 1}</button>`
   ).join('')
 
   const root = document.createElement('div')
@@ -87,7 +87,7 @@ export function createHud({ uiEl, onSelect = null, onRestart = null } = {}) {
       </div>
       <!-- 常驻「回到序章」（U5）：hud-bar 右缘的小链接，全站（S1→S8）一致，
            取代已移除的 S1 终端内独享「重新体验」（U2 删除）。← 是排版字符，字即图形 -->
-      <button class="hud-restart" type="button" aria-label="回到序章">← 回到序章</button>
+      <button class="hud-restart" type="button" tabindex="-1" aria-label="回到序章">← 回到序章</button>
     </div>
   `
   uiEl.appendChild(root)

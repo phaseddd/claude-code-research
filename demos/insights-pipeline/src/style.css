@@ -1040,13 +1040,9 @@ body:has(.hud[data-act='act3']) {
   transform: scale(1.1);
 }
 
-/* 键盘焦点（可达性）：青色焦点环，与 .hold-hit 一致的语言 */
-.hud-node:focus-visible {
-  outline: 2px solid var(--mono);
-  outline-offset: 3px;
-}
-
-/* 节点 tooltip：hover / 键盘聚焦显示站名（等宽小字 + 数据面板感）。
+/* 节点 tooltip：hover 显示站名（等宽小字 + 数据面板感）。
+   2026-08-12 全站无键盘裁决：:focus-visible 焦点环样式随键盘通道一并删除
+   （HUD 按钮 tabindex=-1，Tab 不可达，焦点样式永不触发）。
    --shift 由 hud.js 对首尾节点设置，防止居中 tooltip 溢出屏幕 */
 .hud-node::after {
   content: attr(data-title);
@@ -1087,15 +1083,12 @@ body:has(.hud[data-act='act3']) {
 }
 
 .hud-node:hover::after,
-.hud-node:focus-visible::after,
-.hud-node:hover::before,
-.hud-node:focus-visible::before {
+.hud-node:hover::before {
   opacity: 1;
   transform: translateX(calc(-50% + var(--shift, 0px))) translateY(0);
 }
 
-.hud-node:hover::before,
-.hud-node:focus-visible::before {
+.hud-node:hover::before {
   transform: translateX(var(--shift, 0px)) translateY(0);
 }
 
@@ -1139,11 +1132,6 @@ body:has(.hud[data-act='act3']) {
 .hud-restart:hover {
   color: var(--mono);
   text-shadow: 0 0 10px rgb(var(--mono-rgb) / 0.6);
-}
-
-.hud-restart:focus-visible {
-  outline: 2px solid var(--mono);
-  outline-offset: 3px;
 }
 
 /* 入场：节点逐个上浮浮现（--i 供 stagger），标题与计数同入 */

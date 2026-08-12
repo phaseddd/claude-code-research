@@ -1,7 +1,9 @@
 // scroll.js —— 虚拟滚动输入层（M1）
-// 滚动完全由 JS 接管（body overflow hidden）：wheel / 触屏拖动 / 键盘
+// 滚动完全由 JS 接管（body overflow hidden）：wheel / 触屏拖动
 // → 累加进 targetVh；rAF 循环把 currentVh 向 targetVh lerp 逼近，
 // 每帧回调 onFrame(current, target, dt)。
+// 2026-08-12 全站无键盘裁决：键盘滚动通道删除（原方向键/PageDown/Space），
+// demo 全程鼠标/触屏操作（与序章无键盘裁决同源，范围补全）
 //
 // 内部单位 vh（与 MasterTimeline 的 scrollVh 预算同标尺，不理会视口像素）：
 // wheel 的 px 增量经 /innerHeight 换算为 vh。
@@ -12,8 +14,6 @@
 
 const WHEEL_FACTOR = 140 // wheel 力度系数（2026-08-06 主人需求连续提速：35 → 70 → 140；快甩单帧 clamp 500px 时 ≈82vh，仍不足一站 180vh）
 const WHEEL_CLAMP = 500 // 单帧 wheel 增量上限（px；对齐零站点 ±500 clamp，防甩动滚轮单帧跳多段）
-const KEY_STEP = 0.9 // 方向键单步（vh）
-const KEY_PAGE = 6 // PageDown / PageUp / Space 步进（vh）
 const SNAP_EPS = 0.5 // target 与 current 差值小于此（vh）时直接对齐，
 // 避免 lerp 渐近不达导致"滚到底却永远到不了段末"
 const LERP_RATE = 5 // 帧率无关 lerp 速率（60fps 下每帧 ≈8% 收敛）
@@ -87,41 +87,10 @@ export function createScroll({ max = 0, onFrame = null, wheelFactor = WHEEL_FACT
     touchY = null
   }
 
-  // 键盘：方向键小步、PageDown/PageUp/Space 大步（页面无原生滚动，键盘也归 JS 管）
-  const onKeyDown = (e) => {
-    // 仅 Space/Enter 在按钮/输入控件上时让给控件语义（激活/按住）——方向键与翻页
-    // 是滚动语义，不因焦点位置吞掉（2026-08-05 F3：点击 HUD 节点后焦点停在按钮上，
-    // 原守卫把方向键全吞 → 键盘滚动永久失效）
-    if ((e.key === ' ' || e.key === 'Enter') && e.target.closest?.('button, [role="button"], input, textarea, select, a')) return
-    let dv = 0
-    switch (e.key) {
-      case 'ArrowDown':
-      case 'ArrowRight':
-        dv = KEY_STEP
-        break
-      case 'ArrowUp':
-      case 'ArrowLeft':
-        dv = -KEY_STEP
-        break
-      case 'PageDown':
-      case ' ':
-        dv = KEY_PAGE
-        break
-      case 'PageUp':
-        dv = -KEY_PAGE
-        break
-      default:
-        return
-    }
-    e.preventDefault()
-    bump(dv)
-  }
-
   window.addEventListener('wheel', onWheel, { passive: true })
   window.addEventListener('touchstart', onTouchStart, { passive: true })
   window.addEventListener('touchmove', onTouchMove, { passive: false })
   window.addEventListener('touchend', onTouchEnd)
-  window.addEventListener('keydown', onKeyDown)
 
   return {
     setTarget,
@@ -134,7 +103,6 @@ export function createScroll({ max = 0, onFrame = null, wheelFactor = WHEEL_FACT
       window.removeEventListener('touchstart', onTouchStart)
       window.removeEventListener('touchmove', onTouchMove)
       window.removeEventListener('touchend', onTouchEnd)
-      window.removeEventListener('keydown', onKeyDown)
     },
   }
 }

@@ -257,7 +257,7 @@ function bootTimeline() {
   // 段只切可见窗口)。分流比来自合成数据统计(简报 §2.5:meta 支明显宽于 facet 支)
   shared.river = createRiver({ scene: shared.scene, branchShare: STATS.metaShare })
   window.addEventListener('resize', onResize)
-  // 虚拟滚动：wheel / 触屏 / 键盘 → targetVh；lerp 平滑 → 每帧喂给时间轴
+  // 虚拟滚动：wheel / 触屏 → targetVh（2026-08-12 全站无键盘裁决，键盘通道删除）；lerp 平滑 → 每帧喂给时间轴
   scroll = createScroll({ max: totalVh, onFrame: onScrollFrame })
   // HUD 覆盖层：节点点击 → 跳到对应站/幕（segments 是模块级常量，直接查）；
   // 常驻「回到序章」→ 销毁引擎重建序章（U5，全站逃生口）
