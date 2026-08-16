@@ -494,8 +494,8 @@ export function createS2({ scene, camera, uiEl, river }) {
       river.setVisibleRange(RIVER_SPLIT, 1)
       // 宽度连续(2026-08-05 画卷重构):不归零 —— S1 已注满命中会话的信息量,
       // 站界收缩会暴露「河断了」的错觉;拍3 抽河再随抽取量 ramp 到全量最宽
-      // (宽度叙事:源头窄 → S1 注入 → 星云汇聚最宽 → 分流变细)
-      river.setFlow('idle')
+      // (宽度叙事:源头窄 → S1 注入 → 星云汇聚最宽 → 分流变细)。
+      // 流速/分叉/吸收的复位由 makeSceneSegment 统一做(river.resetPerformanceState)
       runBeats()
       entered = true
     },

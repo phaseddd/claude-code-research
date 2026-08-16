@@ -55,10 +55,13 @@ const SPIN = 1.2
 // ---------- 流星（2026-08-13 主人裁决：重做，弃「固定斜线匀速周期循环」） ----------
 // 技法参考 three-comet-trail（固定池 + 段龄渐隐到黑 + additive 叠加头部聚亮）
 // 与 meteor effect spec（随机出生 3~7s 间隔、随机边缘、随机角度/速度、1~2s 寿命）：
-//   尾巴 = 200 段,只存在于头部走过的路径(出生点之后的段才可见,随头生长);
+//   尾巴 = 400 段,只存在于头部走过的路径(出生点之后的段才可见,随头生长);
 //   亮度 (1-k)^2.5 幂渐隐 —— 有效亮尾 ~3 成行程,头部由高密度叠加自动聚亮
 const METEOR_N = 3 // 同屏上限
-const METEOR_SEG = 200 // 段距 ≈ 行程/200 ≈ 17px,与头部点径重叠成连续彗尾
+// 段距 = 行程/400 ≈ 4px(最长行程 1.6 NDC ≈ 1568px) —— 2026-08-13 缩尺寸适配:
+// 头径 13px → 6px(与星场 3/5px 同族,仅比最大星大一档),尾巴 3px → 2px;
+// 段距必须 < 头径才能重叠成连续彗尾,点径减半 → 段数翻倍,否则断成串珠
+const METEOR_SEG = 400
 const METEOR_TRAVEL_MIN = 0.9 // 行程 NDC(0.45~0.8 屏宽,长但彗尾幂渐隐后有效亮尾克制)
 const METEOR_TRAVEL_MAX = 1.6
 const METEOR_FIRST_MIN = 0.8 // 首条出生窗口 0.8~2.3s(进场即见,不干等)
@@ -254,7 +257,7 @@ export function createStarfield({ container, pausedEl }) {
   scene.add(mesh)
   scene.add(burstMesh)
 
-  // ---------- 流星（2026-08-13 主人裁决重做）：头 + 200 段随路径生长的尾巴 ----------
+  // ---------- 流星（2026-08-13 主人裁决重做）：头 + 400 段随路径生长的尾巴 ----------
   // 每条流星 = 顶点池 METEOR_N×METEOR_SEG,参数走 uniform 数组(生命周期由 JS 重投,
   // 顶点零更新);出生点之后的段才可见(step(k, progress)) = 尾巴跟着头长出来,
   // 而非「整条斜线横移」;亮度 (1-k)^2.5 幂渐隐到黑 + additive 头部聚亮
@@ -313,7 +316,7 @@ export function createStarfield({ container, pausedEl }) {
         vColor = vec3(0.85, 0.93, 1.0); // 白热偏冷(与星场同族,不抢河青)
         float headDist = uTravel[m] * (progress - k);
         vec2 p = uOrigin[m] + uDir[m] * headDist;
-        gl_PointSize = (3.0 + 10.0 * bright) * uDPR;
+        gl_PointSize = (2.0 + 4.0 * bright) * uDPR; // 头 6px / 尾 2px(2026-08-13 适配星场比例)
         gl_Position = vec4(p, 0.0, 1.0);
       }
     `,

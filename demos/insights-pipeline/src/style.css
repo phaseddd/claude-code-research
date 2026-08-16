@@ -31,7 +31,7 @@
 
   /* 琥珀的 RGB 分量:原序章揭示拍点题句通电唯一使用,2026-08-12 揭示拍整体删除
      （主人裁决「只有一瞬间的亮」）—— 定义随 .theme-live 一起移除 */
-  /* 暗色文字衬底底色(RGB 分量;HUD 渐暗/节点底/站文案衬底/标签底片共用,
+  /* 暗色文字衬底底色(RGB 分量;HUD 渐暗/节点底/标签底片共用,站文案衬底已删;
      改主题底色只动这一处 —— 原 rgba(5,7,13,…) 硬编码 5 处) */
   --ink-veil: 5 7 13;
 
@@ -1100,16 +1100,9 @@ body:has(.hud[data-act='act3']) {
   z-index: 12; /* 3D 场景之上、HUD（30）之下 */
 }
 
-/* 字永远净（简报 §1.4-6）：星云/河源头扫过文案区，柔暗衬底保文字锐利。
-   S1 与 S2 共用同一衬底（选择器合并，原两处逐字复制） */
-.s2-copy::before,
-.s1-copy::before {
-  content: '';
-  position: absolute;
-  inset: -18px -36px;
-  z-index: -1;
-  background: radial-gradient(ellipse 62% 56% at 50% 45%, rgb(var(--ink-veil) / 0.55), transparent 72%);
-}
+/* 文案柔暗衬底已删(2026-08-13 主人裁决):画卷重构(2026-08-05)后文案区整体
+   稳居河道带之下、与河/星云粒子不重叠,衬底无守护对象 —— 「字永远净」衬底
+   是文案与粒子交叠时代的残留,文字未浮现时反而留下「没主人的阴影」 */
 
 /* 大字核心句：思源宋体 Heavy 900（站标题字阶，简报 §2.4） */
 .s2-big {
@@ -1211,8 +1204,8 @@ body:has(.hud[data-act='act3']) {
   font-size: clamp(13px, 1.2vw, 15px); /* 演出化调整：原 10px 不可读，随视口 13~15px */
   letter-spacing: 0.08em;
   white-space: nowrap;
-  /* 暗色圆角小底片（演出化调整：与 .s1-copy::before 同款 radial-gradient 思路，
-     粒子河背景下文字锐利可读；边缘半透明融合，中心足够暗保证字净） */
+  /* 暗色圆角小底片（演出化调整：radial-gradient 暗底片思路，粒子河背景下文字
+     锐利可读；边缘半透明融合，中心足够暗保证字净） */
   background: radial-gradient(
     ellipse 130% 130% at 50% 50%,
     rgb(var(--ink-veil) / 0.85) 30%,
@@ -1269,7 +1262,7 @@ body:has(.hud[data-act='act3']) {
   opacity: 0; /* 入场由节拍淡入，避免首帧闪现 */
   user-select: none;
   -webkit-user-select: none;
-  overflow: hidden; /* 圆角裁切扫描线 */
+  overflow: hidden; /* 圆角裁切 */
 }
 
 /* 标题行：等宽小字（演出化调整 2026-08-06：终端内「重新体验」按钮已移除，
@@ -1442,61 +1435,19 @@ body:has(.hud[data-act='act3']) {
   pointer-events: none;
 }
 
-/* 命中/注入完成的斩截闪(影评人 2026-08-05:「命中要有身体感,别只加两行字」;
-   MATCH 浮现与进度条走满两处复用;动画一次性,100% 帧回初始 shadow) */
-.s1-hit-flash {
-  animation: s1-hit-flash 0.15s ease-out;
-}
-@keyframes s1-hit-flash {
-  0% {
-    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04);
-  }
-  50% {
-    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04),
-      0 0 24px rgb(var(--mono-rgb) / 0.55), 0 0 0 1px rgb(var(--mono-rgb) / 0.5);
-  }
-  100% {
-    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(59, 108, 246, 0.04);
-  }
-}
-
-/* 扫描线：仅面板内 1px、3~5% opacity（简报 §4 克制细节：全局扫线会土） */
-.s1-scanline {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 1px;
-  background: rgba(190, 215, 255, 0.9);
-  opacity: 0.04;
-  pointer-events: none;
-  animation: s1-scan 7s linear infinite;
-}
-
-@keyframes s1-scan {
-  from {
-    top: 0;
-  }
-  to {
-    top: 100%;
-  }
-}
+/* 斩截闪已删(2026-08-13 主人裁决:命中/100% 两处全删,原因见 s1.js buildBeats);
+   扫描线已删(同上:1px@0.04 几乎不可见,且现代面板风无 CRT 语义锚点) */
 
 /* 站内文案区（面板下方；0.20~0.75 随滚动浮现，scrub 驱动；措辞按演出基线
    「S1 · 终端演剧情」与终端行呼应，2026-08-06 演出化调整）
    画卷重构:从居中改为与面板同左缘同列宽的左对齐柱(仪器柱叙事,根治两张皮);
    文案整体稳居河道带之下(出生 57%H 起步、柱右缘 33.5%W vs 河道 x>34%W,不重叠) */
 .s1-copy {
-  position: relative; /* ::before 衬底定位锚(与 .s2-copy 同款) */
   margin-top: 6vh;
   margin-left: var(--copy-gutter);
   width: var(--copy-col);
   text-align: left;
 }
-
-/* 字永远净(简报 §1.4-6):河源头粒子团在面板下方,与文案区交叠 ——
-   柔暗衬底压暗粒子,文字锐利。衬底规则与 .s2-copy 共用（见上方合并选择器，
-   2026-08-05 主人实测「文案区盖住粒子」） */
 
 /* 矮视口(≤950px 高):面板/文案区用固定 px 整体上移,避开底部 HUD 轨道
    (2026-08-05 主人实测:850px 视口下注记文案与 HUD 重叠 —— 布局溢出同一根因)。
@@ -1564,14 +1515,4 @@ body:has(.hud[data-act='act3']) {
   opacity: 0;
 }
 
-/* 合成标注 + 终端注记：小字、dim 色（简报 §4 措辞诚实） */
-.s1-copy-notes {
-  margin-top: 2.2em;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.8;
-  color: rgba(232, 236, 244, 0.42);
-  opacity: 0;
-}
-
-/* 尊重动效偏好（简报 §5）：光标不闪、扫描线静止；节拍时长由 s1.js 置 0 直接呈现 */
+/* 合成标注/终端注记已删(2026-08-13 主人裁决:出戏,整块删除,简报 §4 诚实注记作废) */

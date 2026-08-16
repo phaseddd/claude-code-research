@@ -2,7 +2,7 @@
 //
 // 单 THREE.Points + ShaderMaterial,一个 draw call(简报 §3.1 / §7.1「粒子 draw call = 1」)。
 // 四层粒子(L0 芯 / L1 身 / L2 尘 / L3 火花)不是 4 个 Points,是同一 buffer 内按 aLayer 分区、
-// shader 内按层调参 —— 顶点动画全部在 shader(uTime 驱动),不做 JS 逐粒子循环
+// shader 内按层调参 —— 顶点动画全部在 shader(uFlowPhase / uTime 驱动),不做 JS 逐粒子循环
 // (1e4 粒子 60fps 的唯一正解,简报 §3.1)。
 //
 // 路径系统(简报 §6.1 空间模型):三站共享同一条连续河。
@@ -11,9 +11,10 @@
 //   分叉 morph 由 uBranchOn(0→1)混合主干与分支采样,动画期平滑张开,路径数组静态无需重建。
 //   uniform vec3 数组在顶点着色器内分段线性采样(每顶点 ~96 次迭代,GPU 可忽略)。
 //
-// 流动 = 生死(简报 §3.3.5):t' = fract(aPathT + uTime × 流速),生命周期包络基于 t'
-// 计算 —— 0~8% fade-in、8~80% hold、80~100% fade-out;出生 0~12% 放大(easeOutCubic)、
-// 末 15% 收缩。粒子回绕源头 = 新粒子不断出生,「数据在运转」永不静止。
+// 流动 = 生死(简报 §3.3.5):t' = fract(aPathT + uFlowPhase),uFlowPhase = ∫流速 dt
+// (JS 侧积分,见 update);生命周期包络基于 t' 计算 —— 0~8% fade-in、8~80% hold、
+// 80~100% fade-out;出生 0~12% 放大(easeOutCubic)、末 15% 收缩。粒子回绕源头 =
+// 新粒子不断出生,「数据在运转」永不静止。
 //
 // 参数基线(简报 §0.6:改了要能说出为什么,见各处注释):
 //   粒子总数 10000 = L0 1000 / L1 6000 / L2 2700 / L3 300(简报 §3.1 四层表)
@@ -144,11 +145,11 @@ const VERT = /* glsl */ `
   attribute float aSize;    // 层内随机基尺寸(px @ z≈14)
   attribute vec3  aColor;   // 层基色 × 层亮度(CPU 已乘)
   attribute float aAlpha;   // 层透明度
-  attribute float aPhase;   // 呼吸 / 脉冲相位(错峰,避免全河同步)
+  attribute float aPhase;   // 均匀哈希源(流速抖动;呼吸/脉冲用途随呼吸项删除)
   attribute float aBranch;  // S3 分支 0=meta / 1=facet(CPU 按 STATS 统计分配)
 
   uniform float uTime;
-  uniform float uFlowSpeed;
+  uniform float uFlowPhase;    // 流动相位 = ∫流速 dt(JS 侧积分,见 update)
   uniform float uRiverWidth;   // 半宽(世界单位,信息量驱动)
   uniform float uWidthInjTime; // 信息量注入时刻(前锋传播起点,默认 -1e3 = 已扫完全河)
   uniform float uRiverWidthOld; // 注入瞬间旧宽快照(前锋扫过区 = 新宽,未扫区 = 旧宽)
@@ -196,9 +197,22 @@ const VERT = /* glsl */ `
   }
 
   void main() {
-    // 流动:t 推进回绕 = 粒子生死循环;边缘粒子更慢(高斯截面流体感)
+    // 流动:t 推进回绕 = 粒子生死循环;边缘粒子更慢(高斯截面流体感)。
+    // 相位用 uFlowPhase(JS 侧 ∫流速 dt)而非 uTime×流速(2026-08-15 修复):
+    // 后者对时间求导 = 流速 + uTime × 流速变化率 —— 变速期凭空多出一项,
+    // 且系数是「河创建以来的秒数」。序章直进 S1 时 uTime≈7s(多 0.32 t/s),
+    // 滚到 S2/S3 再回来 uTime≈70s(多 3.2 t/s,是目标流速的 32 倍)——
+    // 「重进 S1 那段加速特别快、加速完又硬回落」的根因。积分形式下
+    // d(相位)/dt ≡ 当前流速,与河的绝对年龄无关。
+    // 速度扰动(2026-08-13 主人裁决「定时亮团」修复):复用 aPhase 做均匀哈希,
+    // ±20%(0.8~1.2)—— 原固定速度下粒子场每 10s(1/流速)整圈重现,固定簇
+    // 「定时出现」;扰动后各粒子周期 8.3~12.5s 错开,簇在跑圈中拉开消散。
+    // 二改(同日):初版 sin(aPhase) 分布双峰(多数粒子挤在两端)→ 只把 10s
+    // 拆成两个相邻周期;改 fract(aPhase×1.618) 均匀分布 + 加宽。
+    // 仿真验证:10s 自相关峰 0.80 → 0.22(sin 版) → 0.13(均匀版)
     float edge = 1.0 - EDGE_DIM * clamp(abs(aAcross), 0.0, 1.0);
-    float t = fract(aPathT + uTime * uFlowSpeed * (1.0 - EDGE_SLOW * clamp(abs(aAcross), 0.0, 1.0)));
+    float jit = 0.8 + 0.4 * fract(aPhase * 1.618);
+    float t = fract(aPathT + uFlowPhase * (1.0 - EDGE_SLOW * clamp(abs(aAcross), 0.0, 1.0)) * jit);
     bool inFork = uBranchOn > 0.001 && t > uForkT;
 
     // 位置:主干 / 分支(morph 混合,分叉动画平滑张开)
@@ -238,13 +252,15 @@ const VERT = /* glsl */ `
     float seg = smoothstep(uSegRange.x - SEG_BAND, uSegRange.x, t) *
       (1.0 - smoothstep(uSegRange.y, uSegRange.y + SEG_BAND, t));
 
-    // 高斯截面偏移 + 呼吸扰动(双正弦叠加,幅度 0.04~0.08 × 河宽,频率 0.6~1.2)
+    // 高斯截面偏移。呼吸扰动已整项删除(2026-08-13 主人裁决):出处是简报 §3.1
+    // 的「呼吸扰动」参数,非主人本人需求 —— 先以 sign(aAcross) 平移造出谷底
+    // 中心裂缝(斜向切割线),改等比缩放后主人仍见线,逐项排查无果,按「质疑
+    // 即删」原则整项删除。河截面静态;流动/宽度包络/脉冲/泛光均不受影响。
     vec3 t0 = sampleCurve(uPathMain, clamp(t - 0.01, 0.0, 1.0));
     vec3 t1 = sampleCurve(uPathMain, clamp(t + 0.01, 0.0, 1.0));
     vec3 tangent = normalize(t1 - t0);
     vec3 lateral = normalize(cross(tangent, vec3(0.0, 1.0, 0.0)));
-    float breath = (sin(uTime * 0.9 + aPhase) + 0.5 * sin(uTime * 1.7 + aPhase * 2.3)) * 0.02;
-    pos += lateral * (aAcross * halfW + breath * uRiverWidth * sign(aAcross) * 2.0);
+    pos += lateral * (aAcross * halfW);
     pos.x += uPointerBias * uRiverWidth * 0.02; // 鼠标隐藏分(±2%,勿抢戏)
 
     // 生命周期:主干 0~8% fade-in / 8~70% hold / 70~88% fade-out(河末段消亡);
@@ -343,9 +359,22 @@ export function createRiver({ scene, renderer, camera, branchShare = 0.73 } = {}
   const PATH_T_WEIGHT = 0.58 // [0, 0.88) 主干主要段权重
   let i = 0
   for (const [li, layer] of LAYERS.entries()) {
+    // L3 火花层低差异分布(2026-08-13 主人裁决):纯随机在 t 轴上产生泊松簇,
+    // 大号火花凑簇随流漂移 = 「定时亮团」;分层采样(抖动网格)把火花在主干/
+    // 分支两区内均匀铺开,簇的成因从根源消除。其它层保持纯随机 —— 泊松噪声
+    // 弱(L0 ±30% 内),留着是自然感
+    const stratMainN = li === 3 ? Math.round(layer.count * PATH_T_WEIGHT) : 0
     for (let j = 0; j < layer.count; j++, i++) {
-      aPathT[i] =
-        Math.random() < PATH_T_WEIGHT ? Math.random() * FORK_T : FORK_T + Math.random() * (1 - FORK_T)
+      if (li === 3) {
+        const inMain = j < stratMainN
+        const n = inMain ? stratMainN : layer.count - stratMainN
+        const lo = inMain ? 0 : FORK_T
+        const bin = inMain ? j : j - stratMainN
+        aPathT[i] = lo + ((bin + 0.5 + (Math.random() - 0.5) * 0.5) / n) * (inMain ? FORK_T : 1 - FORK_T)
+      } else {
+        aPathT[i] =
+          Math.random() < PATH_T_WEIGHT ? Math.random() * FORK_T : FORK_T + Math.random() * (1 - FORK_T)
+      }
       // 横向偏移按层缩放(across):芯窄、尘散(三层亮度分界可读,2026-08-05)
       aAcross[i] = Math.max(-1.2, Math.min(1.2, gaussRandom() * GAUSS_SIGMA * layer.across))
       aLayer[i] = li
@@ -379,8 +408,8 @@ export function createRiver({ scene, renderer, camera, branchShare = 0.73 } = {}
     return arr
   }
   const uniforms = {
-    uTime: { value: 0 },
-    uFlowSpeed: { value: FLOW.idle },
+    uTime: { value: 0 }, // 宽度注入前锋专用(流动已改走 uFlowPhase)
+    uFlowPhase: { value: 0 }, // ∫流速 dt(update 每帧累加)
     // 河宽初始 = 最窄(无信息量,简报 §3.3.3 公式 W_MIN)。原 0.6 是无公式语义的
     // 遗留值,且 S1 拍4 从 0.6 瞬跳 1.21 突兀(主人实测:河先窄后突然变宽)
     uRiverWidth: { value: W_MIN },
@@ -443,7 +472,10 @@ export function createRiver({ scene, renderer, camera, branchShare = 0.73 } = {}
   const composer = new EffectComposer(renderer)
   composer.setPixelRatio(1) // 泛光是最低频内容:链上缓冲减半、视觉无损(主渲染器 DPR 不变)
   composer.addPass(new RenderPass(riverScene, camera))
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.5, 0.6, 0.15)) // 尺寸仅构造期占位,由 setSize 决定
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.5, 0.6, 0.1)) // 尺寸仅构造期占位,由 setSize 决定
+  // 阈值 0.1(2026-08-13 主人裁决,原 0.15):河宽 0.25→1.21 摊薄 4.8× 后每像素
+  // 能量跌破 0.15 → 泛光骤停 = 喷发期「悬崖式变暗」;0.1 让宽河仍吃到泛光,
+  // 亮度回落变成渐变。副作用:S2/S3 同河泛光同步增强一点,与「河更亮」裁决同向
   composer.setSize(window.innerWidth, window.innerHeight)
   composer.renderToScreen = false // 见坑 ①
   const quadGeo = new THREE.PlaneGeometry(2, 2)
@@ -477,6 +509,12 @@ export function createRiver({ scene, renderer, camera, branchShare = 0.73 } = {}
   let pulse = 0
   let biasT = 0 // 鼠标归一化 X(-1~1)
   let biasV = 0 // 平滑后的实际偏移
+  let flowSpeed = FLOW.idle // 当前流速(纯 JS 状态:shader 只吃它的积分 uFlowPhase,
+  // 不声明 uFlowSpeed —— 放 uniforms 里会让读者误以为是 GPU 状态)
+  let flowTarget = FLOW.idle // 流速斜坡目标(2026-08-13;硬切时与当前速同值)
+  let flowTau = 0 // 线性斜坡总时长 s(0 = 硬切)
+  let flowFrom = FLOW.idle // 斜坡起点速(线性斜坡;硬切时不用)
+  let flowElapsed = 0 // 斜坡已走时长 s
   const onPointerMove = (e) => {
     biasT = (e.clientX / window.innerWidth) * 2 - 1
   }
@@ -504,8 +542,20 @@ export function createRiver({ scene, renderer, camera, branchShare = 0.73 } = {}
     },
 
     // 流速档(简报 §3.3.1 分站值):'s1' | 's2' | 's3' | 's3split' | 'idle'
-    setFlow(zone) {
-      uniforms.uFlowSpeed.value = FLOW[zone] ?? FLOW.idle
+    // rampSeconds 0 = 硬切(兼容旧调用);>0 = 从当前速线性爬升到目标档。
+    // 2026-08-13 主人裁决「1.2s 线性爬升,全程匀速加速」;原实现是
+    // 指数逼近(step ∝ 剩余差)——数学上永不达终点,靠 0.001 阈值 snap,
+    // 0.045→0.1 实际拖 ≈4.8s(后 2.8s 在爬最后 13%),「重进 S1 加速过程
+    // 长很多」的根因(2026-08-14 CDP 实测:首进/重进曲线逐点重合,尾巴
+    // 一直在,重进时才被盯见)。现改真·线性:flowFrom 记起点、flowElapsed
+    // 累计,速度 = 起点 + 全差 × (elapsed/tau),到点硬 snap —— 1.2s 收工。
+    // 平滑由 update() 承担,无 gsap 依赖,S2/S3 的硬切调用不受影响
+    setFlow(zone, rampSeconds = 0) {
+      flowTarget = FLOW[zone] ?? FLOW.idle
+      flowTau = rampSeconds
+      flowFrom = flowSpeed
+      flowElapsed = 0
+      if (flowTau === 0) flowSpeed = flowTarget
     },
 
     // S1 源头锚点:终端底部中心逆投影(简报 §3.5),重建主干路径并刷新 uniform
@@ -525,8 +575,9 @@ export function createRiver({ scene, renderer, camera, branchShare = 0.73 } = {}
       uniforms.uSegRange.value.set(start, end)
     },
 
-    // 整河隐藏(2026-08-12 主人裁决「进度条满的那一刻,星河才出现」):
-    // S1 enter 置 true(拍1~3 河零存在),拍4 进度 100% 帧 setHidden(false) 同帧揭幕。
+    // 整河隐藏(2026-08-12 主人裁决「进度条满的那一刻,星河才出现」+ 2026-08-13
+    // 契约落定):S1 enter 置 true(拍1~3 + 62→100 爬升全程河零存在),
+    // 拍4 进度 100% 帧 setHidden(false) 同帧揭幕(契约细节见 s1.js buildBeats)。
     // 实现 = mesh.visible(three 对象级剔除,隐藏期 1e4 粒子不跑顶点着色器;
     // 2026-08-12 simplify: 原 shader uniform 乘 0 仍全量光栅化,且无渐进需求)
     setHidden(on) {
@@ -535,11 +586,28 @@ export function createRiver({ scene, renderer, camera, branchShare = 0.73 } = {}
 
     // 缓存盒吸收(简报 §4.3 入盒:粒子接近盒 alpha 渐隐,防穿模;
     // 「速度 ×1.3」由场景侧 setFlow('s3split') 承担,渐隐由 shader 距离场完成)
-    setAbsorbers(aPos, bPos, radius = 1.5, on = true) {
+    setAbsorbers(aPos, bPos, radius = 1.5) {
       uniforms.uAbsorbA.value.copy(aPos)
       uniforms.uAbsorbB.value.copy(bPos)
       uniforms.uAbsorbR.value = radius
-      uniforms.uAbsorbOn.value = on ? 1 : 0
+      uniforms.uAbsorbOn.value = 1
+    },
+
+    // 演出态复位(2026-08-15):河是引擎级共享资产,站级场景写进去的演出态会跨站
+    // 泄漏 —— 只有 S3 会置起 uBranchOn/uAbsorbOn,原先无任何关闭路径,看过 S3 再
+    // 滚回来就一直挂着(分叉泄漏有视觉后果:t>0.88 粒子在非 S3 窗口 life 由 0 变 1,
+    // 双色支流满亮且落在屏幕中央;吸收泄漏则是每帧 1e4 粒子空跑 2 次 distance)。
+    // 「哪些是跨站演出态」是引擎级知识,归这里 —— 站只管设自己要的,漏设即中性,
+    // 由 main.js makeSceneSegment 在每次建站前统一调用,新站(M4/M5 的 S4~S6)白拿。
+    // 不含 infoVolume(S2 刻意保持宽度跨站连续)与 segRange(无中性值,各站/门自设)
+    resetPerformanceState() {
+      this.setBranchMix(0)
+      uniforms.uAbsorbOn.value = 0
+      this.setHidden(false)
+      // 流速归 idle(2026-08-14 修复):原先只有 S2/S3 的 enter 设流速,S1 没有 ——
+      // 重进时若在 S2 停留 ≥3.3s,S2 节拍把流速留在 0.07,S1 斜坡从 0.07 起爬而非
+      // 0.045,读作「重进的 1.2 秒流速特别快」(CDP 实测复现)
+      this.setFlow('idle')
     },
 
     // 事件脉冲:L3 火花向事件点爆发(简报 §3.3.4),strength 0~1,≈0.5s 衰减
@@ -548,13 +616,25 @@ export function createRiver({ scene, renderer, camera, branchShare = 0.73 } = {}
       pulse = Math.min(1, pulse + strength)
     },
 
-    // 每帧:时间推进(流动/呼吸/生死)
+    // 每帧:时间推进(注入前锋/生死)+ 流速斜坡(线性爬升,2026-08-13 裁决
+    // + 2026-08-14 落实;真·线性:elapsed/tau 直接定速度,1.2s 到点硬 snap)
     update(t, dt) {
       uniforms.uTime.value += dt
       pulse *= Math.exp(-3 * dt) // ≈0.5s 衰减窗口
       uniforms.uPulse.value = pulse
       biasV += (biasT - biasV) * 0.05 // 隐藏分平滑跟随(简报 §3.3.6)
       uniforms.uPointerBias.value = biasV
+      if (flowTau > 0) {
+        flowElapsed += dt
+        const k = Math.min(1, flowElapsed / flowTau)
+        flowSpeed = flowFrom + (flowTarget - flowFrom) * k
+        if (k >= 1) {
+          flowSpeed = flowTarget
+          flowTau = 0
+        }
+      }
+      // 相位积分放在流速更新之后:本帧位移用本帧速度,斜坡期无一阶滞后
+      uniforms.uFlowPhase.value += flowSpeed * dt
     },
 
     // 泛光层渲染(装配层每帧在 update 之后、主渲染之前调用;画布不可见时可跳过)

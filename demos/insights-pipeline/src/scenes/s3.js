@@ -15,7 +15,7 @@
 //   拍1 汇聚：setInfoVolume(STATS.totalInfo)（第一幕最宽，信息量全量）+ setFlow('s3')
 //   拍2 分流：setBranchMix(0→1，0.5s easeInOutCubic，简报 §4.3 0.45~0.65s）
 //            + pulseAt(1.0, 0.8)（叉口火花，pathT 1.0 = 主干末点 = 叉口）
-//   拍3 入盒：setAbsorbers(两盒位置, r=1.5, on) + setFlow('s3split')（减速入盒，简报 §3.3.1）；
+//   拍3 入盒：setAbsorbers(两盒位置, r=1.5) + setFlow('s3split')（减速入盒，简报 §3.3.1）；
 //            meta 盒 intensity 0→1（写更新）、facet 盒 80ms 边线闪灰（复用确认）后灭
 //   结算：两支河退潮变细 setInfoVolume(STATS.metaInfo + STATS.facetInfo × 0.7)
 //         （任务给定公式，简报 §4.3「全部结算后两支河变细」）
@@ -226,7 +226,7 @@ export function createS3({ scene, camera, uiEl, river }) {
       .to({}, {
         duration: 0.2,
         onStart: () => {
-          river.setAbsorbers(metaPos, facetPos, ABSORB_R, true)
+          river.setAbsorbers(metaPos, facetPos, ABSORB_R)
           river.setFlow('s3split')
         },
       })

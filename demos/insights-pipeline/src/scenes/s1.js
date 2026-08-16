@@ -51,7 +51,7 @@ const CHAR_MS = { '/': 40, i: 28, n: 32, s: 32, g: 32, h: 32, t: 32 }
 // 原 session:list / session:stats / cache:probe 内部命令名 + 耗时数字,
 // 对第一次进场的观众是噪音(基线:「观众无法解读」),改为「动作演出行」——
 // 两个角色(报告引擎/对话模型)的分工 + 历史会话入缓存,中文大白话紧跟英文
-// 术语;仍为合成数据,不代表真实命令表内容(措辞诚实注记不变,简报 §4)。
+// 术语;仍为合成数据,不代表真实命令表内容(原诚实注记已按 2026-08-13 主人裁决删除)。
 // 字符串数组即可(唯一用法 = 行名渲染;留位式对象形态无现值,去掉)
 const HITS = [
   'engine takes over · 报告引擎接手',
@@ -81,6 +81,14 @@ const HIT_DIM = 'rgba(125, 211, 252, 0.45)' // hit 标记落定色(与 CSS .s1-r
 // river 为必传参数（main.js 引擎级创建共享河，本站只用不建不毁）
 // 无 onRestart:「回到序章」职责已移交 HUD 常驻按钮(main.js createHud 接线),旧
 // 终端内按钮移除时该参数已无使用者,签名保持最小
+// 源头锚点缓存(模块级,跨进场生效;2026-08-14 修复):
+// 锚点由 DOM rect + 相机宽高比推导 —— 同一视口下 rect 存在微抖动(字体/布局/
+// 入场微时序),每次 enter 重新 setSource 会让河的出生段几何在两次进场间漂移
+// (实测:重进 t0.1 屏幕流速 121→99 px/s,-18%,相机/流速不变,唯源头在动)。
+// 缓存输入(rect+aspect),未变则不动源头 —— 出生段几何跨进场逐帧一致;
+// resize / 字体就绪导致输入真变时才重算(设计意图:源头 = 进度条右端)。
+let anchorCache = null // { left, top, width, height, aspect }
+
 export function createS1({ scene, camera, uiEl, river } = {}) {
   let tl = null
   let root = null
@@ -88,7 +96,6 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
   let barEl = null // 进度条(锚点 = 其右端,河的出生点)
   let copyBig = null
   let copySmall = null
-  let copyNotes = null
   let built = false
   let disposed = false
   let lastP = -1 // scrub p 判等（滚动静止时跳过重复写入）
@@ -105,7 +112,7 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
     root.innerHTML = `
       <div class="s1-terminal">
         <div class="s1-term-bar">
-          <span class="s1-term-title">~/insights</span>
+          <span class="s1-term-title">~/</span>
         </div>
         <div class="s1-term-body">
           <div class="s1-prompt"><span class="s1-prompt-sign">&gt;</span> <span class="s1-typed"></span><span class="s1-cursor"></span></div>
@@ -128,12 +135,10 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
             <span class="s1-progress-pct">62%</span>
           </div>
         </div>
-        <div class="s1-scanline"></div>
       </div>
       <div class="s1-copy">
-        <p class="s1-copy-big">/insights 是内置命令,不是模型现场想出来的。</p>
-        <p class="s1-copy-small">它命中命令表:报告引擎接手、对话模型退居二线 —— 干活的是引擎,递链接的是模型。历史会话入缓存(存档),进度提示:'analyzing your sessions'。两个角色,各司其职。</p>
-        <p class="s1-copy-notes">本演示使用合成示例数据<br>终端为演示的合成视觉 —— 引擎是纯代码流程,没有界面</p>
+        <p class="s1-copy-big">/insights 是内置命令,<br>不是模型现场想出来的。</p>
+        <p class="s1-copy-small">它命中命令表:报告引擎接手、对话模型退居二线。<br>干活的是引擎,递链接的是模型。<br>历史会话入缓存(存档),进度提示:analyzing your sessions。<br>两个角色,各司其职。</p>
       </div>
     `
     uiEl.appendChild(root)
@@ -141,7 +146,6 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
     barEl = root.querySelector('.s1-progress-bar')
     copyBig = root.querySelector('.s1-copy-big')
     copySmall = root.querySelector('.s1-copy-small')
-    copyNotes = root.querySelector('.s1-copy-notes')
   }
 
   // ---------- DOM-3D 锚点(简报 §3.5):进度条右端 → 逆投影 → 沿视线走到 z=12 ----------
@@ -157,6 +161,15 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
   function anchor() {
     if (!barEl || !camera) return
     const rect = barEl.getBoundingClientRect()
+    // 缓存命中(2026-08-14):rect 与宽高比未变 → 源头几何不变,跳过路径重建
+    const hit =
+      anchorCache &&
+      Math.abs(rect.left - anchorCache.left) < 0.5 &&
+      Math.abs(rect.top - anchorCache.top) < 0.5 &&
+      Math.abs(rect.width - anchorCache.width) < 0.5 &&
+      Math.abs(rect.height - anchorCache.height) < 0.5 &&
+      Math.abs(camera.aspect - anchorCache.aspect) < 1e-3
+    if (hit) return
     const sx = rect.left + rect.width // 进度条右端(100% 时刻 fill 到达处)
     const sy = rect.top + rect.height / 2
     const tmp = camera.clone()
@@ -173,6 +186,7 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
     const dir = ndc.sub(tmp.position).normalize()
     if (Math.abs(dir.z) < 1e-6) return
     const t = (TARGET_Z - tmp.position.z) / dir.z
+    anchorCache = { left: rect.left, top: rect.top, width: rect.width, height: rect.height, aspect: camera.aspect }
     river.setSource(tmp.position.clone().addScaledVector(dir, t))
   }
 
@@ -204,12 +218,8 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
         at
       )
     }
-    // 面板斩截闪(命中/MATCH 与注入完成顶点;remove + reflow 重启动画)
-    const flashTerm = () => {
-      termEl.classList.remove('s1-hit-flash')
-      void termEl.offsetWidth
-      termEl.classList.add('s1-hit-flash')
-    }
+    // 面板斩截闪已删(2026-08-13 主人裁决:两处全删 —— 拍2 命中的身体感由行间
+    // stagger 承担,100% 帧的因果顶点由「河揭幕 + 源头白闪」承担,卡片闪意义不明)
     // 面板入场:下落 + 淡入(影评人 2026-08-05:纯淡入像「UI 截图在呼吸」,
     // 下落 24px 给「砸入」的参与感;0.18s 仍在简报 §5 无长 fade 上限内)。
     // 必须 fromTo:from() 的目标值是当前值,而 termEl CSS opacity 初始为 0,
@@ -241,8 +251,6 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
     // ---- 拍2 命中:行间 stagger 45~60ms 连击感 + hit 闪 80ms 硬边沿(简报 §4 / §5) ----
     const rowStart = typedEnd + 0.45
     beats.to(matchTitle, { opacity: 1, duration: 0.12 }, rowStart)
-    // 面板斩截闪(影评人 2026-08-05:「命中」要有身体感,别只加两行字)
-    beats.call(flashTerm, [], rowStart)
     rows.forEach((rowEl, i) => {
       const rt = rowStart + 0.08 + i * 0.055
       const nameEl = rowEl.querySelector('.s1-row-name')
@@ -263,9 +271,10 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
     // ---- 拍3:analyzing 浮现(命令表结束后 120~180ms,勿过早)+ 确定性假进度 ----
     const anaT = lastFlashEnd + 0.18
     beats.to(analyzingEl, { opacity: 1, duration: 0.12 }, anaT)
-    // 拍4 前河零存在(2026-08-12 主人裁决「进度条满的那一刻,星河才出现」):
-    // 原预热(河微宽 0.42 + setFlow('warm'))与「沉睡→预热→注入」三级整体删除,
-    // 河在 enter 置隐藏,拍4 揭幕同帧恢复 —— analyzing 期「引擎在跑」由进度条/数字承担
+    // 河零存在期(2026-08-12 主人裁决「进度条满的那一刻,星河才出现」+ 2026-08-13
+    // 契约落定):原预热(河微宽 0.42 + setFlow('warm'))与「沉睡→预热→注入」三级
+    // 整体删除,河在 enter 置隐藏,直到拍4 揭幕帧(进度 100%)才恢复 —— 62→100
+    // 爬升全程河仍不可见,「引擎在跑」由进度条/数字承担
     const progT = anaT + 0.1
     // 确定性假进度 0→62% easeInOut(演出化调整 2026-08-06,演出基线
     // 「62% 进度修复:观众亲眼看到进度从零走起」):原 0.4s linear 太快,
@@ -284,21 +293,35 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
     // 数字与进度条同步爬升(DOM 初始 62% 在 opacity 0 下不可见,首帧即被 0% 覆盖)
     tweenPct(pctEl, 0, PROG_TARGET, PROG_CLIMB, 'power1.inOut', progT)
 
-    // ---- 拍4 河亮:视线焦点从终端移到河(简报 §4 拍4;2026-08-12 重构) ----
-    // 叙事:进度条 62→100 与河变宽同步走完 ——「加载完成的那一刻,河出现」;
-    // 揭幕 = 隐藏解除 + 注入前锋同帧(源头先宽、波浪顺流而下,「数据从终端流入河」);
-    // 宽度补间 1.2s 从 0 起(原预热基线 0.42 已删 ——「沉睡→预热→注入」三级改为
-    // 「隐没→喷发」两级,主人裁决「星河才出现-喷发-流动起来」);
-    // 停顿 0.35s = 62% 停驻的呼吸(进度爬升完成 → 揭幕的间隙,原预热参照已删除)
-    // PROG_CLIMB = 拍3 进度 0→62 的补间时长(拍4 起点随之后移)
+    // ---- 拍4 河亮(简报 §4 拍4;2026-08-13 契约落定) ----
+    // 契约(主人多次要求,2026-08-13 落成代码):「终端卡片 100% 的那一刻,星河才出现」。
+    // 不变量:河可见帧 == 进度条 fill 100% 完成帧(T100)。62% 停驻与 62→100
+    // 爬升全程河零存在 —— 进度条/数字是「引擎在跑」的唯一表达。
+    // 强制方式:T100 = T0 + INJECT_SECONDS 与 bar 62→100 补间同源派生,
+    // 改时长只动 INJECT_SECONDS 一处,揭幕帧永不漂移;任何想在 100% 前让河
+    // 露脸的改动都违反此契约。100% 之后保留「出现-喷发-流动」三级:
+    //   出现 = 揭幕同帧(隐藏解除 + 注入前锋 + 源头白闪)
+    //   喷发 = 河宽 0→信息量全量(1.2s,细河变宽)
+    //   流动 = 宽度到位后 +0.1s 流速 1.2s 线性提到 s1
     const T0 = progT + PROG_CLIMB + 0.35
-    // 拍4 揭幕(2026-08-12):隐藏解除 + 注入前锋同帧 —— 河「出现-喷发」于此帧
-    beats.call(() => {
-      river.setHidden(false)
-      river.injectInfoVolume()
-    }, [], T0)
-    // 宽度:平滑补间到信息量全量(简报 §3.3 河宽随信息量,连续量);
-    // 起点 = 0(预热已删,getInfoVolume 未被写过 → 初始 0 = W_MIN 最窄)
+    // 进度条 62→100(河仍隐藏;「加载完成 → 数据注入」只由进度条/数字表达)
+    beats.to(fillEl, { width: '100%', duration: INJECT_SECONDS, ease: 'power2.out' }, T0)
+    tweenPct(pctEl, PROG_TARGET, 100, INJECT_SECONDS, 'power2.out', T0)
+    // 揭幕帧 = bar 100% 完成同帧 = 因果顶点(影评人 2026-08-05:「analyzing 走满
+    // 的那帧必须是因果顶点」):隐藏解除 + 注入前锋(源头先宽、波浪顺流而下,
+    // 「数据从终端流入河」)+ 源头白闪
+    const T100 = T0 + INJECT_SECONDS
+    beats.call(
+      () => {
+        river.setHidden(false)
+        river.injectInfoVolume()
+        river.pulseAt(0, 1)
+      },
+      [],
+      T100
+    )
+    // 喷发:宽度平滑补间到信息量全量(简报 §3.3 河宽随信息量,连续量);
+    // 起点 = 0(预热已删,enter 归零 → 出现时是 W_MIN 最窄细河)
     const vh = { v: river.getInfoVolume() }
     beats.to(
       vh,
@@ -308,26 +331,15 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
         ease: 'power2.out',
         onUpdate: () => river.setInfoVolume(vh.v),
       },
-      T0
+      T100
     )
-    // 进度条 62→100 与宽度同起点同长同 ease(「加载完成 → 数据注入」因果)
-    beats.to(fillEl, { width: '100%', duration: INJECT_SECONDS, ease: 'power2.out' }, T0)
-    // 拍4 数字(INJECT_SECONDS = 注入补间时长,与河宽同长;tweenPct 共享手法)
-    tweenPct(pctEl, PROG_TARGET, 100, INJECT_SECONDS, 'power2.out', T0)
     // 流速错峰:宽度补间完成后 +0.1s 才「唰」(影评人 2026-08-05 两轮:0.35s/0.7s
     // 时宽度还在爬升,「宽波」和「加速」被读成一起涨;补间完成后宽度已到位,
-    // 观众先读「信息量上来了」,再整体加速,两拍可分)
-    beats.call(() => river.setFlow('s1'), [], T0 + INJECT_SECONDS + 0.1)
-    // 走满顶点(影评人 2026-08-05:「analyzing 走满的那帧必须是因果顶点」):
-    // 进度条 100% 瞬间 —— 源头再白闪一次(注入完成)+ 面板斩截闪
-    beats.call(
-      () => {
-        river.pulseAt(0, 1)
-        flashTerm()
-      },
-      [],
-      T0 + INJECT_SECONDS
-    )
+    // 观众先读「信息量上来了」,再整体加速,两拍可分)。
+    // 2026-08-13 主人裁决:硬切 2.2× 瞬跳读作「粒子突然散开」,改斜坡提速;
+    // 二改(同日):0.6s 指数斜坡首段过快仍像瞬跳 → 1.2s 线性爬升,
+    // 「唰」有启动感但全程匀速,不再诡异
+    beats.call(() => river.setFlow('s1', 1.2), [], T100 + INJECT_SECONDS + 0.1)
 
     return beats
   }
@@ -348,8 +360,9 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
       camera.lookAt(CAM_LOOK_START)
       // 河段窗口:S1 带(出生→右缘);重入时重置(旧值可能是 S3 的全河)
       river.setVisibleRange(...RANGE_S1)
-      // 整河隐藏(2026-08-12 主人裁决):河在拍4 进度 100% 前零存在,
-      // 揭幕 = setHidden(false) + injectInfoVolume 同帧(拍4 T0)
+      // 整河隐藏(2026-08-12 主人裁决 + 2026-08-13 契约落定):河在进度条
+      // fill 100% 前零存在(含 62→100 爬升),揭幕 = setHidden(false) +
+      // injectInfoVolume 同帧(拍4 T100,契约细节见 buildBeats)
       river.setHidden(true)
       // 拍4 起点确定性(2026-08-12 simplify):重入 S1 时残留 S2/S3 的全量信息量
       // (≈1.52),拍4「从最窄喷发」不成立 —— enter 显式归 0(与 setVisibleRange
@@ -365,11 +378,22 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
       })
       window.addEventListener('resize', onResize)
 
-      tl = buildBeats()
+      // 节拍开播(2026-08-14 重进节奏修复):首进由 skipTo 落位 p=0,首帧 scrub
+      // 即开播(与旧行为一致);重进时先不开播 —— 旧行为在进场边界就重放卡片,
+      // 观众滚回途中错过打字段,揭幕/加速紧跟在滚动动作之后发生,与首进
+      // 「静场完整序列」的观感不一致(主人实测:流速/投影/相机/时序四条探针
+      // 逐点相同仍觉有差,唯一剩余差异 = 序列起点相对滚动动作的位置)。
+      // 改为 scrub 首次进入 p≤0.05(回到开头)才开播 —— 「滚回最开头,卡片
+      // 重新加载」,揭幕/加速全部发生在静止视野,两条路径节奏对齐
+      // tl = buildBeats() 移入 scrub 首帧 p≤0.05 处
     },
 
-    // 站内滚动:相机沿河带游移(展卷)+ 0.20~0.75 文案浮现(大字 → 小字 → 注记)
+    // 站内滚动:相机沿河带游移(展卷)+ 0.20~0.60 文案浮现(大字 → 小字;
+    // 注记已按 2026-08-13 主人裁决整块删除)
     scrub(p) {
+      // 节拍开播(2026-08-14):滚回到开头(p≤0.05)才重放卡片 —— 首进 skipTo
+      // 落位 p=0 即刻满足;重进则等观众回到开头。tl 非空 = 已开播,不再触发
+      if (!tl && p <= 0.05) tl = buildBeats()
       if (p === lastP) return // p 判等：滚动静止时跳过（timeline 每帧都调 scrub）
       lastP = p
       // 画卷展卷:cam-start 全带 → cam-end 出口(easeInOutQuad 同 S2/S3 相机语言;
@@ -383,7 +407,6 @@ export function createS1({ scene, camera, uiEl, river } = {}) {
       root.style.opacity = String(1 - pan * 0.9)
       scrubFade(copyBig, p, 0.2, 0.42, 22)
       scrubFade(copySmall, p, 0.36, 0.6, 22)
-      scrubFade(copyNotes, p, 0.55, 0.75, 22)
     },
 
     dispose() {

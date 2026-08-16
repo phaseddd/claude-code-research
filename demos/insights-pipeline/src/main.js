@@ -17,7 +17,7 @@ import { createS2, S2_CAM_ENTER, S2_LOOK_ENTER } from './scenes/s2.js'
 import { createS3 } from './scenes/s3.js'
 import { createHud, ACT_TITLES } from './hud.js'
 import { STATS } from './data/sessions.js'
-import { easeInOutSine, rampCameraPath, disposeRenderer } from './utils.js'
+import { easeInOutSine, rampCameraPath, disposeRenderer, clamp01 } from './utils.js'
 
 // 分层容器：#scene（3D 层，z-index 0）与 #ui（DOM 层，z-index 10），
 // 统一挂到 index.html 的 #app 应用根（#app 的 fixed inset:0 规则由此生效）
@@ -112,6 +112,11 @@ function makeSceneSegment({ id, create, scrollVh }) {
     id,
     scrollVh,
     enter(ctx) {
+      // 演出态复位(2026-08-15):河是引擎级共享资产,上一站写进去的演出态
+      // (分叉/吸收/流速/隐藏)必须在建站前归中性,否则跨站泄漏 —— 详见
+      // river.resetPerformanceState。放这里而非各站 enter:站只管设自己要的,
+      // 漏设即中性,新站白拿;必须在 create() 之前(s3 在工厂体里就写 river)
+      shared.river?.resetPerformanceState()
       inst = create({ ...shared })
       inst.enter()
     },
@@ -135,14 +140,19 @@ function makeSceneSegment({ id, create, scrollVh }) {
 //                转场不暗场景 —— 原 0.25 把整条河暗到 25% 透明度,观众看到的是
 //                「河若隐若现的暗场」而非镜头追河,演出化 2026-08-06 U6;幕间
 //                gate1to2/gate2to3 保持 0 不变)
-//   segRange     转场期河段窗口(S1 [0,0.35] → g1 [0,1] 全河 → S2 [0.35,1]:
-//                观众在转场中第一次看到河的全貌,「同一条河」的认知建立;
-//                下一站 enter 覆盖回站内窗口 —— 覆盖发生在 gate 末段
-//                (p≈0.65 预挂新站时),此时镜头已到新站视野区,窗口切换不可见)
+//   segRange     转场期出发站河段窗口(= 旧站窗口,enter 时设,无切换帧)
+//   segRangeEnd  转场期到达站河段窗口(scrub 随 p 从 segRange 滑到这里;
+//                缺席 = 不滑窗,行为同旧)
 //   cameraPath / lookPath  门内相机滑轨关键帧链(首帧 = 旧站 scrub 终点、
 //                末帧 = 下一站 enter 相机位 → 无缝;中间帧沿河采样,镜头
 //                「追着河飞」而非空间直线;位置按 p 分段插值,look 端点线性)
-function makeFadeGate({ id, duration = GATE_DURATION, minOpacity = 0, cameraPath = null, lookPath = null, segRange = null }) {
+function makeFadeGate({ id, duration = GATE_DURATION, minOpacity = 0, cameraPath = null, lookPath = null, segRange = null, segRangeEnd = null }) {
+  // 河窗滑动段内局部 smoothstep(utils 无 smoothstep,门是唯一使用者;
+  // clamp 复用 utils.clamp01,不手抄)
+  const ss = (a, b, x) => {
+    const k = clamp01((x - a) / (b - a))
+    return k * k * (3 - 2 * k)
+  }
   return {
     id,
     scrollVh: GATE_VH,
@@ -153,9 +163,11 @@ function makeFadeGate({ id, duration = GATE_DURATION, minOpacity = 0, cameraPath
     fadeInShare: 0.35,
     deferPrev: true, // 进入本段时旧段不立即 teardown，由下方 scrub 的 teardownOld() 控制
     enter() {
-      // 转场期河段窗口(2026-08-06 U6):gate 激活即切 segRange(g1 全河 [0,1])。
-      // 放 enter 而非 scrub 首帧:时机相同(switchTo 激活当帧),且反向滚回再入时
-      // enter 必被再次调用 → 窗口必恢复;旧站 enter 各自设回站内窗口(兜底)
+      // 转场期河段窗口(2026-08-13 主人裁决「S1→S2 真不断流」重做):原 2026-08-06
+      // 版 enter 硬切全河 [0,1] —— 前进时下游粒子凭空弹出(强接感),回滚时
+      // 全河粒子暴增(比首载多得多)。改为:enter 只设出发站窗口(与旧站一致,
+      // 无切换帧),scrub 随 p 滑动前窗→后窗 —— 任何时刻都不出现全河帧,
+      // 前进/回滚对称(同一 p 公式)。segRangeEnd 缺席时行为同旧(无滑窗)
       if (segRange && shared.river) shared.river.setVisibleRange(...segRange)
     },
     scrub(ctx, p) {
@@ -165,6 +177,14 @@ function makeFadeGate({ id, duration = GATE_DURATION, minOpacity = 0, cameraPath
       // 导出的 CAM_ENTER/LOOK_ENTER 对齐)
       if (shared.camera && cameraPath && lookPath) {
         rampCameraPath(shared.camera, cameraPath, lookPath[0], lookPath[1], easeInOutSine(p))
+      }
+      // 河窗滑动(2026-08-13 主人裁决):先向前扩窗(p 0~0.5,y 滑到后窗终点)、
+      // 再向后收窗(p 0.5~1,x 滑到后窗起点)—— 窗口始终只罩相机附近河段,
+      // 与「镜头追着河飞」同步;回滚时 p 反向,窗口原路滑回,无全河闪现
+      if (shared.river && segRange && segRangeEnd) {
+        const x = segRange[0] + (segRangeEnd[0] - segRange[0]) * ss(0.5, 1, p)
+        const y = segRange[1] + (segRangeEnd[1] - segRange[1]) * ss(0, 0.5, p)
+        shared.river.setVisibleRange(x, y)
       }
       // 三段式(浅 dip 版):0~0.35 旧场景淡出到 minOpacity → 0.35 卸旧
       // → 0.65 预挂新场景 → 0.65~1 淡入回全亮
@@ -213,14 +233,16 @@ const segments = [
   makeSceneSegment({ id: 's1', create: createS1, scrollVh: SCENE_VH }),
   // 幕内轻量 gate(S1→S2):minOpacity 0.9 = 河全程全亮连续流动(原 0.25 把整条
   // 河暗到 25% 透明度,「镜头追河」变「河若隐若现的暗场」,演出化 2026-08-06 U6);
-  // segRange [0,1] = 转场中河切全河,观众第一次看到河的全貌(源头→星云→叉口);
+  // segRange/segRangeEnd = 河窗滑动(2026-08-13 主人裁决「真不断流」):原 [0,1]
+  // 全河硬切造成前进强接/回滚粒子暴增,改前窗→后窗随 p 滑移,无全河帧;
   // cameraPath = G1_CAM_PATH 沿河采样关键帧链(镜头追着河飞;终点 = s2.js 导出的
   // S2_CAM_ENTER/S2_LOOK_ENTER,由场景模块对齐)—— 滚动过站无缝衔接
   makeFadeGate({
     id: 'g1',
     duration: LIGHT_GATE_DURATION,
     minOpacity: 0.9,
-    segRange: [0, 1],
+    segRange: [0, RIVER_SPLIT],
+    segRangeEnd: [RIVER_SPLIT, 1],
     cameraPath: G1_CAM_PATH,
     lookPath: [S1_LOOK_END, S2_LOOK_ENTER],
   }),
@@ -271,6 +293,15 @@ function bootTimeline() {
     camera: shared.camera,
     branchShare: STATS.metaShare,
   })
+  // 管线预热(2026-08-14 修复):首帧渲染 = 河材质 + 泛光链 + 合成 quad 全量
+  // 着色器编译,主线程阻塞 0.5~1.5s(实测:首进 enter→斜坡 6861ms,重进 5357ms,
+  // 差 ≈1.5s)。GSAP 的 lagSmoothing 把这段停顿从拍1~拍4 的时钟里整段扣掉,
+  // 首进节拍整体晚起播;且拍4 揭幕帧(河首次可见)还要再编译顿一次 ——
+  // 「首进平缓、重进快」的剩余根因(流速本身已证明两条路径相同)。
+  // 预热 = 在节拍时间轴创建之前同步渲染一帧(河此时默认可见),之后 s1.enter
+  // 再置隐藏;渲染结果被序章白光峰值盖住,观众无感。重进时管线已热,不重复
+  shared.river.render()
+  renderer.render(shared.scene, shared.camera)
   window.addEventListener('resize', onResize)
   // 虚拟滚动：wheel / 触屏 → targetVh（2026-08-12 全站无键盘裁决，键盘通道删除）；lerp 平滑 → 每帧喂给时间轴
   scroll = createScroll({ max: totalVh, onFrame: onScrollFrame })
