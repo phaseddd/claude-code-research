@@ -28,12 +28,14 @@ artifacts/
 .augment/
 .crush/
 .goose/
+.grok/
 
 # Nested AI agent state if tools are launched below the repo root.
 **/.codex/
 **/.agents/
 **/.claude/
 **/.cursor/
+**/.grok/
 **/.continue/
 **/.windsurf/
 
