@@ -2,11 +2,12 @@
 title: acorn 与 JavaScript AST 解析工具
 kind: concept
 status: active
-updated: 2026-07-09
-applies_to: general；acorn 事实截至 2026-07（v8.17.0）
+updated: 2026-09-07
+applies_to: general；acorn 事实截至 2026-09（latest v8.18.0）
 tags:
   - topic:ast
   - topic:acorn
+  - topic:claude-code
   - form:concept
 ---
 
@@ -45,8 +46,8 @@ acorn 是一个**小而快、零运行时依赖、纯 JavaScript 写的 JavaScri
 ## acorn 本体
 
 - **作者**：Marijn Haverbeke —— 同时是 CodeMirror、ProseMirror 的作者，著有《Eloquent JavaScript》。
-- **诞生**：2012 年下半年（一手博客与二手资料在 9 月 / 10 月间有一月之差，待一手核）。作者自述初衷是「没有非做不可的理由」，主要图「小而定义清晰的系统好玩」，外加想在性能上胜过当时的 Esprima；关键差异就是上面说的运算符优先级解析。
-- **当前版本**：**8.17.0**（2026-06 发布，已随 Node.js v26.4.0 于 2026-06-24 纳入）。8.17.0 新增 ES2025 import attributes、ES2025 RegExp modifiers、ES2025 重复捕获组名，并升级到 Unicode 16.0。
+- **诞生**：**2012-09-24**（npm 上首个版本 `0.0.1` 的发布时间戳，registry 一手数据）。作者自述初衷是「没有非做不可的理由」，主要图「小而定义清晰的系统好玩」，外加想在性能上胜过当时的 Esprima；关键差异就是上面说的运算符优先级解析。
+- **版本节奏**：8.x 长期稳定，节奏是「跟着 ECMAScript 定稿特性与 Unicode 版本走的小步迭代」，无破坏性大版本。**别在本页记最新版本号**——它每几个月就动一次，精确值以 [CHANGELOG](https://github.com/acornjs/acorn/blob/master/acorn/CHANGELOG.md) 为准，本页写作时的基准见 frontmatter `applies_to`。
 - **体积/依赖**：极轻量，**运行时零依赖**；被 9,600+ npm 包依赖，跨超百万仓库。
 - **许可证**：MIT。
 - **特性策略**：只实现 **stage 4（已定稿）** 的 ECMAScript 特性；未定稿的提案特性一律走**插件**，acorn 本体不收。
@@ -104,17 +105,21 @@ acorn 的价值很大程度上来自「它已经在你的依赖树里」：
 - **压缩（minify）**：terser 解析 → AST → 改名/删死代码 → 生成。
 - **静态分析 / 插桩 / 依赖分析**：遍历 AST 提取符号、调用关系、import 图，或注入探针节点后回生成。
 
-## 在 AI 编程工具 / Claude Code 语境
-
-核心思路是**把代码当结构化数据而非纯文本**：AST 捕获「程序含义」利于索引/embedding；tree-sitter 的 CST 保精确源位置，利于检索与精确编辑。
-
-要点澄清：**这个语境下的主流证据大多指向 tree-sitter，而非 acorn**。相关工具如 `ast-grep`（结构化搜索/重构）、`difftastic`（按 AST 节点做结构化 diff）、`probe`（ripgrep 速度 + tree-sitter 的语义搜索）、以及各种经 MCP 把符号/调用图喂给 Claude Code/Cursor 的项目，底层多是 tree-sitter。**acorn 在 AI 工具内的直接用途缺乏公开证据**（见「证据边界」）。
-
 ## 在本项目中的含义
 
-本仓库做 Claude Code 逆向研究时，`private/analysis/` 下的 patches 需要解析并改写**打包后的 `cli.js`**。经冲突复检核对，本项目补丁**一律用 acorn**：`acorn.parse` 解析 → 定位并改写 AST 节点 → 改完再 `acorn.parse` 复解析验证；**从不用 Babel，也非纯正则**。这正是「用 AST 而非字符串」原则的直接应用 —— 面对压缩混淆过的大文件，结构化改写比文本替换稳得多。因此 acorn / ESTree 是这条改写链的概念基础。
+先划清一个容易搞混的边界：**AI 编程工具语境下的主流证据指向 tree-sitter，而非 acorn**。`ast-grep`（结构化搜索/重构）、`difftastic`（按节点做结构化 diff）、`probe`（ripgrep 速度 + 语义搜索），以及各种经 MCP 把符号/调用图喂给 Claude Code / Cursor 的项目，底层多是 tree-sitter —— 因为它保精确源位置、跨语言。acorn 在这类工具内的直接用途**缺乏公开证据**（见「证据边界」）。
 
-> 版本细节：项目补丁**锁定**的是 acorn `8.14.0`（`.mjs` 脚本）/ `8.16.0`（`.ps1` 脚本），和本页说的「生态最新 8.17.0」是「项目锁定版本 vs 生态最新版本」的区别，别混淆。
+但**本仓库自己**的用法是明确的：做 Claude Code 逆向时要解析并改写**打包后的 `cli.js`**（十几 MB、压缩混淆的单 bundle），这条链**一律用 acorn**，从不用 Babel，也不是纯正则。定位策略是「结构而非字面」——不依赖任何被混淆的变量名，因而能跨版本存活。以 `/copy` UTF-8 补丁为例：
+
+1. `acorn.parse` 把 `cli.js` 解析成 AST；
+2. 找 discriminant 为 `process.platform` 的 `SwitchStatement`；
+3. 用 `case "darwin"` 里含 `"pbcopy"` 调用来确认这就是 `copyNative` 的那个 switch；
+4. 在 `case "win32"` 里定位目标 `CallExpression`，按 AST 位置精确替换参数；
+5. 改完再 `acorn.parse` 复解析一次，验证产物仍是合法 JS。
+
+这正是「用 AST 而非字符串」原则的直接落地：面对压缩混淆的大文件，结构化改写比文本替换稳得多。acorn / ESTree 因此是这条改写链的概念基础。
+
+> 版本细节：项目补丁**锁定**的是 acorn `8.14.0`（`.mjs` 脚本）/ `8.16.0`（`.ps1` 与 `.sh` 脚本），脚本运行时从 unpkg 拉固定版本并本地缓存。这是「项目锁定版本」，与生态 latest 是两回事，别混淆。
 
 ## 常见误解
 
@@ -122,17 +127,17 @@ acorn 的价值很大程度上来自「它已经在你的依赖树里」：
 - ❌「acorn 能直接解析 TS/JSX」 → **不能**，需插件（acorn-jsx）或换 Babel / typescript-eslint。
 - ❌「CST = AST」 → 不同：CST 保留全部语法细节，AST 是去噪抽象版。
 - ❌「Rust 解析器从 Node 调用一定更快」 → 小文件未必，有 FFI + 序列化开销。
-- ❌「acorn 最新是 8.15」 → 已到 **8.17.0**（版本会动，以 CHANGELOG 为准）。
+- ❌「解析报语法错 = 源码真有语法错」 → 常见真因是**选项没配对**：`ecmaVersion` 低于源码用到的语法，或 `sourceType` 用了默认的 `"script"` 去解析含 `import`/`export` 的 ESM。改写 `cli.js` 这类打包产物时尤其要先把这两项设对。
 
 ## 依据（证据与复核）
 
-**版本号已核对**：acorn **8.17.0** 经 WebSearch 核对（npm 官方页 + Node.js v26.4.0 发布说明，2026-06-24 纳入），**修正了上一轮素材里 8.15.0 vs 8.17.0 的冲突**。
+**本项目用法（可自查）**：`private/patches/` 下 23 个补丁脚本（11 `.ps1` + 12 `.sh` + 3 `.mjs`）**全部**走 acorn，无一使用 Babel；版本锁定见各脚本里的 unpkg 下载行（`acorn@8.16.0` / `acorn@8.14.0`）。`private/` 是本地非公开材料区且被 gitignore，公开读者无法打开——所以上一节把定位策略内联进了正文，页面不依赖这些路径也能读懂。
 
 **主要来源：**
 
 - acorn 本体 / CHANGELOG：<https://github.com/acornjs/acorn> ；<https://github.com/acornjs/acorn/blob/master/acorn/CHANGELOG.md>
 - 作者自述：<https://marijnhaverbeke.nl/blog/acorn.html>
-- npm：<https://www.npmjs.com/package/acorn>
+- npm：<https://www.npmjs.com/package/acorn> ；registry 元数据（`https://registry.npmjs.org/acorn` 的 `time` 字段）—— 首发日期与各版本发布时间的一手来源，`0.0.1` 时间戳为 2012-09-24。
 - ESTree 规范：<https://github.com/estree/estree>
 - espree 由来：<https://eslint.org/blog/2014/12/espree-esprima/>
 - Babel parser：<https://babeljs.io/docs/babel-parser>
@@ -144,30 +149,16 @@ acorn 的价值很大程度上来自「它已经在你的依赖树里」：
 
 **证据边界（未确认 / 待核）：**
 
-- 本次入库时一手页面抓取（WebFetch）不可用（网关 503/403），除版本号外的多数事实来自 **WebSearch 对权威源的摘要**，引用 URL 指向其所据的权威页。
+- 首轮入库时一手页面抓取（WebFetch）不可用（网关 503/403），除版本与 CHANGELOG 外的多数生态事实来自 **WebSearch 对权威源的摘要**，引用 URL 指向其所据的权威页。
 - acorn 下载量的精确数字（不同聚合器给「月 9.39 亿」「周 2.17 亿」），量级可信、精确值存疑。
 - ESTree 指导委员会「ESLint/Acorn/Babel 三方」来自二手综述，未逐字核对成员名单。
 - acorn 在 AI 编程工具内的**直接**用途缺公开证据；主流证据指向 tree-sitter。Claude Code 是否内部用 acorn，未查到公开证据。
-- ES2025/ES2026 逐项语法覆盖未逐条核实（`using`/`await using`、import attributes、RegExp modifiers 已确证）。
-
-## 冲突复检与处置（第 3 步）
-
-冲突复检（全新上下文子代理）总裁决 **WARNING**，无 BLOCKER（全库当时无 `status: active` 的 workflow 页可被推翻）。三点 WARNING 已交维护者拍板（2026-07-09），处置如下 —— 据此本页升为 `active`：
-
-1. **旧文是否标 stale** → 维护者定：**不处理**。旧文 `private/analysis/old/docs/JavaScript-AST-解析工具深度指南.md`（记 acorn 8.16.0、把 acorn 单述为「递归下降」、首发「10 月」）保持原样，本页作为「概念 + 当前事实」入口，与旧文按互补关系并存。
-2. **acorn 首发月份**（本页「2012 下半年，9 月存疑」vs 旧文「10 月」）→ 维护者定：**不追**。保留本页谨慎口径。
-3. **证据边界**（除版本号外多为 WebSearch 摘要）→ 维护者定：**接受**。核心结论另有项目内代码（补丁一律用 acorn）与行业共识支撑，边界详见「依据」。
+- 各解析器的性能对比数字均为**厂商自测**，本页未独立复现。
 
 ## 相关页面
 
-**概念 ↔ 实战 配套**（冲突复检确认：同主题但互补，不重复、不合并）：
+- [cometix-claude-code-restore.md](cometix-claude-code-restore.md) —— 同库案例页：CometixSpace 那条恢复流水线同样用 acorn 给提取出的 `cli.js` 打补丁，是本页「acorn 是 cli.js 改写链的概念基础」在**第三方项目**上的独立印证。
 
-- `private/analysis/old/docs/JavaScript-AST-解析工具深度指南.md` —— 同主题的**实战深度手册**（完整 API 选项、ES5 节点类型速查、真实 patch 的 AST 树例、代码生成 / 遍历生态、四步补丁走查）。本页是「概念 + 当前事实」入口，旧文是「实战深度」配套。
+**本地材料（`private/`，被 gitignore，公开读者不可见）：**
 
-**本项目 acorn 用法的硬证据：**
-
-- `private/analysis/04-patch-system.md` —— acorn 解析 → astPatch → patch 后 acorn 复解析验证的完整链路。
-- `private/analysis/01-file-by-file.md` —— 明列「acorn：解析 JavaScript AST，用于补丁和验证」。
-- `private/analysis/00-overview.md` —— 「补丁尽量基于结构而非纯字符串……用 acorn 解析 AST」。
-- `private/analysis/old/patches/fix-claude-copy.mjs`、`fix-claude-line-streaming-windows.mjs`、`claude-code-AskUserQuestion-preview-patch.mjs` —— 三个 acorn AST 补丁实例。
-- `private/patches/apply-claude-code-cleanup-period-fix.ps1`（及同目录 `.sh`）—— 当前活跃的 acorn AST 补丁集。
+- `private/patches/` —— 23 个 acorn AST 补丁脚本。其中 `fix-claude-copy.mjs`、`fix-claude-line-streaming-windows.mjs`、`claude-code-AskUserQuestion-preview-patch.mjs` 三个 `.mjs` 锁 `acorn@8.14.0`；`apply-claude-code-*.ps1` / `.sh` 系列锁 `acorn@8.16.0`。上一节的定位策略示例即出自 `fix-claude-copy.mjs`。
