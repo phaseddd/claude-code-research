@@ -31,3 +31,10 @@
 [2026-08-02] maintenance | 库级收尾：investigations/ 目录新建；glossary 新增 topic:deepseek；事实修正 cli.js 非「单行 bundle」（实测 50209 行、最长行约 538KB），两页源码定位描述同步订正 | 无
 [2026-08-03] maintenance | workflow 框架补缺：schema 目录清单补齐五种 kind（investigations/、decisions/ 实建）、frontmatter YAML 安全规则、status 四态一体判定（入库三问 + 维护流转）；intake 选类型与页面结构规划改为「决策归维护者」确认制、模板定位为默认骨架非表单、log 粒度一行 = 一次 git 提交 | 无
 [2026-09-07] maintenance | acorn 页复核修订：订正两处事实错误（ES2025 import attributes/RegExp modifiers/Unicode 16 实为 8.14.0/8.13.0 特性，被误记为 8.17.0 新增；正文钉死的 latest 已过期至 8.18.0）→ 正文不再记 latest，版本收敛到 applies_to + CHANGELOG；首发月份 9/10 月悬案用 npm registry time.0.0.1 = 2012-09-24 结案；清 4 条 private/analysis 死链、证据改为正文内联定位策略；删「冲突复检与处置」流程节（属 log 不属知识页）；tags 补 topic:claude-code；仍 active | 无（同页修订）
+[2026-09-07] concept | Cometix 用 fetchAndProcess 按「读 CDN 清单 → 下载八平台二进制 → 抽出并定位 cli.js → 兼容闸门 → 打补丁 → 组九平台包加主包」把官方 Bun SEA 还原成 Node npm 包；本页只记顺序与交接目录 | superseded: PriorKnowledge/cometix-claude-code-restore.md（连同下列五页共同取代该 case 页）
+[2026-09-07] concept | 官方自 v2.1.113 起按平台 optionalDependencies 交付 Bun SEA 原生二进制；Cometix 按 CDN 清单八个平台键下载抽出，官方主包 JS 不当运行入口 | 无
+[2026-09-07] mechanism | extractBunSEA 解析 Bun 节并剥 BunFS/`root/` 前缀写到 extractDir；入口用 existsSync 在嵌套 src/entrypoints/cli.js 与根上 cli.js 之间选择，不按版本号分支 | 无
+[2026-09-07] mechanism | verifyNodeCompat 在 patchFile 前以三项 fatal 结构闸门决定 compatible；失败则 process.exit(1)；typeof Bun 只分类不挡关 | 无
+[2026-09-07] mechanism | patchFile 剥 Bun CJS 外壳后做 P1–P3/P5/P7–P10 AST 补丁与 P9 包名替换，并按 typeof Bun 少于 10 次注入 P6 polyfill | 无
+[2026-09-07] mechanism | 组九个平台包加主包，install.cjs 按 os/cpu 与 musl/android 探测拷贝 cli.js 与 vendor；release.yml 仅 workflow_dispatch 发布 | 无
+[2026-09-07] maintenance | 上述六页验收后收尾：删除被取代的 PriorKnowledge/cometix-claude-code-restore.md（其独有的 P5 2.1.117→2.1.118 案例、issue #50203、node-lief 背景、可借鉴/不应照搬两节，经维护者决定不承接）、摘掉 index 对应行、把 advisor-tool / deepseek-compat-advisor-400 / acorn 三页共 4 处入链改指 cometix-restore-pipeline 与 node-compat-patches；六页 applies_to 由 origin/master 钉成 master@c286ad1；用 git 历史结案两处未确认（0bf75e5 删 cron '0 */3 * * *' → README「每 6 小时」从未成立；c2f8284 引入 existsSync 选入口并同时加 curl 重试）；订正补丁后 acorn 解析只记日志不中止、P7/P8 只改首处匹配、第 5 步遍历 activeOut；restore-pipeline 补依据/常见误解/未确认，node-compat-patches 补关键边界 | 无

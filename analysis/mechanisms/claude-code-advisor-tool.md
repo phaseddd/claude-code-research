@@ -311,4 +311,5 @@ case"advisor_tool_result":
 ## 相关页面
 
 - [[deepseek-compat-advisor-400]] —— 第三方兼容端点（DeepSeek）未实现 advisor 时的故障案例与实测
-- [[cometix-claude-code-restore]] —— 本观察所在客户端（恢复版）的流水线与补丁机制背景
+- [[cometix-restore-pipeline]] —— 本观察所在客户端（恢复版）从官方 Bun SEA 还原成 Node npm 包的工作链
+- [[node-compat-patches]] —— 该恢复版对抽出的 `cli.js` 做了哪些改写（本页所查的 bundle 即这些补丁的产物）

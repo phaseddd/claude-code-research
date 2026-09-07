@@ -71,7 +71,7 @@ flowchart TD
 
 ### 排除项（先排除，再定位）
 
-1. **不是 @cometix 恢复版的 bug**：注入逻辑（`dEo` 校验 / `ne.push` 注入 / 环境变量注册）在 2.1.219 cli.js 里完整且与官方文档描述一致；恢复版忠实镜像官方（详见 [[cometix-claude-code-restore]]）。此项为**推断级**——官方自 v2.1.113 起无纯 JS 分发，无法逐字节对照官方原生二进制。
+1. **不是 @cometix 恢复版的 bug**：注入逻辑（`dEo` 校验 / `ne.push` 注入 / 环境变量注册）在 2.1.219 cli.js 里完整且与官方文档描述一致；恢复版忠实镜像官方（补丁面见 [[node-compat-patches]]）。此项为**推断级**——官方自 v2.1.113 起无纯 JS 分发，无法逐字节对照官方原生二进制。
 2. **不是 DeepSeek 模型端**：400 在反序列化阶段产生（错误类型 `invalid_request_error`、0 token 消耗、`duration_api_ms: 0`），模型根本没收到请求。
 
 ### 对照实验（9 组，全部实测）
@@ -194,4 +194,5 @@ $env:CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL='1';claude -p 'just say hi' --
 ## 相关页面
 
 - [[claude-code-advisor-tool]] —— advisor 功能在 Claude Code 侧的运作全链路（机制页）
-- [[cometix-claude-code-restore]] —— 本次故障所在客户端（恢复版）的流水线与补丁机制背景
+- [[cometix-restore-pipeline]] —— 本次故障所在客户端（恢复版）从官方 Bun SEA 还原成 Node npm 包的工作链
+- [[node-compat-patches]] —— 该恢复版对抽出的 `cli.js` 做了哪些改写

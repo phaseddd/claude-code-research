@@ -157,7 +157,8 @@ acorn 的价值很大程度上来自「它已经在你的依赖树里」：
 
 ## 相关页面
 
-- [cometix-claude-code-restore.md](cometix-claude-code-restore.md) —— 同库案例页：CometixSpace 那条恢复流水线同样用 acorn 给提取出的 `cli.js` 打补丁，是本页「acorn 是 cli.js 改写链的概念基础」在**第三方项目**上的独立印证。
+- [node-compat-patches.md](node-compat-patches.md) —— 同库机制页：CometixSpace 那条恢复流水线同样用 acorn 给抽出的 `cli.js` 打补丁（P1/P2/P3/P5/P7/P8/P10 按节点特征改写，P9 才走字符串替换），是本页「acorn 是 cli.js 改写链的概念基础」在**第三方项目**上的独立印证。
+- [cometix-restore-pipeline.md](cometix-restore-pipeline.md) —— 那条流水线的整体顺序：补丁只是其中一环。
 
 **本地材料（`private/`，被 gitignore，公开读者不可见）：**
 
