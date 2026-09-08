@@ -14,11 +14,11 @@ tags:
 
 ## 一句话结论
 
-`fetchAndProcess` 第 3 步对每个已下载的平台二进制调用 `extractBunSEA`：按 Mach-O / PE / ELF 取出 Bun 专用节，解析模块表，把内嵌文件写到 [extractDir](../glossary.md)。写盘前只在前缀匹配时剥掉 [BunFS](../glossary.md) 路径（POSIX 上的 `/$bunfs/`，或 PE 上的 `B:/~BUN/`）和随后的 `root/`。然后用 `existsSync` 在 `extractDir/src/entrypoints/cli.js` 与 `extractDir/cli.js` 之间选出 `cliSrc`，交给闸门和补丁。
+`fetchAndProcess` 第 3 步对每个已下载的平台二进制调用 `extractBunSEA`：按 Mach-O / PE / ELF 取出 Bun 专用节，解析模块表，把内嵌文件写到 [extractDir](../../glossary.md)。写盘前只在前缀匹配时剥掉 [BunFS](../../glossary.md) 路径（POSIX 上的 `/$bunfs/`，或 PE 上的 `B:/~BUN/`）和随后的 `root/`。然后用 `existsSync` 在 `extractDir/src/entrypoints/cli.js` 与 `extractDir/cli.js` 之间选出 `cliSrc`，交给闸门和补丁。
 
 ## 输入
 
-- 第 2 步已经写到 `outputDir/.tmp/bins/<平台>/` 的官方二进制（下载见 [官方 Bun SEA 交付](claude-code-bun-sea-shipping.md)）。
+- 第 2 步已经写到 `outputDir/.tmp/bins/<平台>/` 的官方二进制（下载见 [官方 Bun SEA 交付](01-claude-code-bun-sea-shipping.md)）。
 - `scripts/bun-sea-extract.mjs` 的 `extractBunSEA(binaryPath)`：只解析，不写盘。
 - 写盘与选入口在 `scripts/fetch-and-process.mjs` 第 3 步完成。独立入口 `extractToDir` 用同一套剥前缀规则落盘。
 
@@ -42,7 +42,7 @@ tags:
 
 ## 剥虚拟路径前缀后写到 extractDir
 
-官方二进制里嵌的不是「磁盘路径已经排好」的一棵目录树。模块表给每个内嵌文件起的名字带 [BunFS](../glossary.md) 虚拟前缀：POSIX 上是 `/$bunfs/`，PE 上是 `B:/~BUN/`。`fetchAndProcess` 把返回的模块写到 `outputDir/.tmp/extract/<平台名>/`（变量 **extractDir**）。对每个模块的 `name`：
+官方二进制里嵌的不是「磁盘路径已经排好」的一棵目录树。模块表给每个内嵌文件起的名字带 [BunFS](../../glossary.md) 虚拟前缀：POSIX 上是 `/$bunfs/`，PE 上是 `B:/~BUN/`。`fetchAndProcess` 把返回的模块写到 `outputDir/.tmp/extract/<平台名>/`（变量 **extractDir**）。对每个模块的 `name`：
 
 1. 若以这次解析得到的 `basePath` 开头，才切掉这段。不以该前缀开头则原样留下。
 2. 若接着以 `root/` 开头，再切掉这 5 个字符。
@@ -64,20 +64,20 @@ tags:
 
 当前脚本走的是存在性检查，不是版本号比较。因果链如下。
 
-1. 官方从 v2.1.113 起交付的是各平台原生可执行文件。Bun 把 Claude Code 的 JavaScript 和 native 模块嵌进这个文件的专用节（Mach-O 的 `__BUN/__bun`，PE/ELF 的 `.bun`）。模块表里的名字带 `/$bunfs/` 或 `B:/~BUN/` 这种虚拟前缀。这套分发形态本库叫 [Bun SEA](../glossary.md)。
+1. 官方从 v2.1.113 起交付的是各平台原生可执行文件。Bun 把 Claude Code 的 JavaScript 和 native 模块嵌进这个文件的专用节（Mach-O 的 `__BUN/__bun`，PE/ELF 的 `.bun`）。模块表里的名字带 `/$bunfs/` 或 `B:/~BUN/` 这种虚拟前缀。这套分发形态本库叫 [Bun SEA](../../glossary.md)。
 2. `fetchAndProcess` 写盘时：若模块名以这次解析得到的 `basePath`（`/$bunfs/` 或 `B:/~BUN/`）开头，才切掉这段；若接着以 `root/` 开头，再切掉这 5 个字符。剩下的相对路径拼到 `extractDir` 上，才是磁盘上的文件路径。
 3. 剥完之后若相对路径仍是 `src/entrypoints/cli.js`，`writeFile` 的目标就是 `extractDir/src/entrypoints/cli.js`。当前脚本把这条路径赋给变量 `legacyCli`。
 4. `fetch-and-process.mjs` 第 222 行注释写 `v2.1.229+: embedded layout flattened, cli.js at extract root`。按第 2 步的剥前缀规则，这表示入口模块剥完 `/$bunfs/` 或 `B:/~BUN/` 以及随后的 `root/` 之后，剩下的相对路径是 `cli.js`，`writeFile` 的目标就是 `extractDir/cli.js`。
 5. `verify-node-compat.mjs` 第 85 行是 `readFileSync(cliJsPath)`。若调用方只把 `legacyCli`（`join(extractDir, 'src', 'entrypoints', 'cli.js')`）传进去，而这次写出没有把入口放到那条嵌套路径上，`readFileSync` 打开的就是不存在的 `extractDir/src/entrypoints/cli.js`，会因文件不存在抛错，流程在 `patchFile` 之前退出。`.github/workflows/release.yml` 的 Build all packages 调用的就是 `fetch-and-process.mjs`，会在这一步失败。
 6. 当前实现在写出之后用 `existsSync(legacyCli)` 判断：这条嵌套路径在就把 `cliSrc` 设成它，不在就把 `cliSrc` 设成 `join(extractDir, 'cli.js')`。这个 `cliSrc` 先交给 `verifyNodeCompat`，再交给 `patchFile`。两种相对路径都能进入校验和补丁。代码没有 `if (version >= '2.1.229')` 这样的分支。
 
-二进制下载时 curl 的重试参数不在本页。第 2 步 `downloadFile` 给 curl 加 `--retry 3 --retry-delay 2 --retry-all-errors`，是另一条约束：八路并行下载包在同一个 `Promise.all` 里，任意一路失败抽出都不会开始。见 [官方 Bun SEA 交付](claude-code-bun-sea-shipping.md) 的「下载八份二进制」。
+二进制下载时 curl 的重试参数不在本页。第 2 步 `downloadFile` 给 curl 加 `--retry 3 --retry-delay 2 --retry-all-errors`，是另一条约束：八路并行下载包在同一个 `Promise.all` 里，任意一路失败抽出都不会开始。见 [官方 Bun SEA 交付](01-claude-code-bun-sea-shipping.md) 的「下载八份二进制」。
 
 ## 输出与后续消费
 
 - **extractDir**：该平台全部写出的模块。
 - **cliSrc**：选中的入口路径。
-- 闸门与补丁消费 `cliSrc`（见 [兼容闸门](verify-node-compat-gate.md)、[兼容补丁](node-compat-patches.md)）。
+- 闸门与补丁消费 `cliSrc`（见 [兼容闸门](03-verify-node-compat-gate.md)、[兼容补丁](04-node-compat-patches.md)）。
 - `buildPlatformPackage` 按 extractDir 下的 `audio-capture.node` 等名字把 napi 模块拷进 `vendor/`，并把其余根上普通文件拷进 `vendor/assets/`。
 
 若去掉这一步，`fetchAndProcess` 不会往 extractDir 写入任何模块。同一步里的 `existsSync` 选入口之后，`verifyNodeCompat` 的 `readFileSync` 会因两个路径都没有文件而抛错，随后的 `patchFile` 不会跑到。后面的平台包和 `node cli.js --version` 都不会得到可运行的 **cli.js** 和 `.node`。
@@ -87,7 +87,7 @@ tags:
 - 只处理 Mach-O / PE / ELF 三种头；节名固定为 `__BUN/__bun` 或 `.bun`。
 - 剥前缀是 `startsWith` 守卫，不是假定每个 name 都带 `/$bunfs/` 或 `B:/~BUN/` 再加 `root/`。
 - 入口选择不看版本号，只看 `legacyCli` 是否存在。v2.1.229 分界来自第 222 行注释，不是 `if (version >= …)` 分支。这条 `existsSync` 选择由 `c2f8284`（2026-09-04，fix: support flattened SEA layout in v2.1.229+，unblocks 2.1.229–2.1.237）引入，替换掉原来写死的 `join(extractDir, 'src', 'entrypoints', 'cli.js')`；同一个提交还给 `downloadFile` 的 curl 加上了那组重试参数。
-- 二进制下载与 curl 重试不在本页（见 [官方 Bun SEA 交付](claude-code-bun-sea-shipping.md) 的 `downloadFile`）。
+- 二进制下载与 curl 重试不在本页（见 [官方 Bun SEA 交付](01-claude-code-bun-sea-shipping.md) 的 `downloadFile`）。
 
 ## 证据与复核
 
@@ -102,7 +102,7 @@ tags:
 
 ## 相关页面
 
-- [工作链顺序](cometix-restore-pipeline.md)
-- [官方 Claude Code 的 Bun SEA 交付](claude-code-bun-sea-shipping.md)
-- [打补丁前的 Node 兼容闸门](verify-node-compat-gate.md)
-- [把抽出的 cli.js 改成 Node 可执行](node-compat-patches.md)
+- [工作链顺序](00-cometix-restore-pipeline.md)
+- [官方 Claude Code 的 Bun SEA 交付](01-claude-code-bun-sea-shipping.md)
+- [打补丁前的 Node 兼容闸门](03-verify-node-compat-gate.md)
+- [把抽出的 cli.js 改成 Node 可执行](04-node-compat-patches.md)

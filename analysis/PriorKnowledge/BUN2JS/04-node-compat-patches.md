@@ -14,13 +14,13 @@ tags:
 
 ## 一句话结论
 
-`scripts/fetch-and-process.mjs` 在闸门通过之后，把选中的入口交给 `scripts/node-compat-patch.mjs` 的 `patchFile`。`patchFile` 先剥掉 Bun 加载器才调用的 CJS 外壳，再用 acorn 按 script 解析并改 AST（P1、P2、P3、P5、P7、P8、P10），然后对整份文本做包名替换（P9），按 `typeof Bun` 是否少于 10 次决定是否插入 `templates/bun-polyfill.js`（[P6](../glossary.md)），最后补 `#!/usr/bin/env node`，写入 `outputDir/.tmp/patched/<平台>.js`。
+`scripts/fetch-and-process.mjs` 在闸门通过之后，把选中的入口交给 `scripts/node-compat-patch.mjs` 的 `patchFile`。`patchFile` 先剥掉 Bun 加载器才调用的 CJS 外壳，再用 acorn 按 script 解析并改 AST（P1、P2、P3、P5、P7、P8、P10），然后对整份文本做包名替换（P9），按 `typeof Bun` 是否少于 10 次决定是否插入 `templates/bun-polyfill.js`（[P6](../../glossary.md)），最后补 `#!/usr/bin/env node`，写入 `outputDir/.tmp/patched/<平台>.js`。
 
 ## 剥 Bun CJS 外壳
 
-抽出的 **cli.js** 文件头可以是 `// @bun @bytecode @bun-cjs`，外层再包一层 `(function(exports, require, module, __filename, __dirname){…})`。这是 [Bun CJS 外壳](../glossary.md)。Bun 加载器负责调用这层函数。Node 直接跑则只得到一个不被调用的函数表达式，主程序不执行。
+抽出的 **cli.js** 文件头可以是 `// @bun @bytecode @bun-cjs`，外层再包一层 `(function(exports, require, module, __filename, __dirname){…})`。这是 [Bun CJS 外壳](../../glossary.md)。Bun 加载器负责调用这层函数。Node 直接跑则只得到一个不被调用的函数表达式，主程序不执行。
 
-`stripBunWrapper`：若文件以 `// @bun @bytecode @bun-cjs` 开头则删掉这一行；若接下来是 `(function(exports, require, module, __filename, __dirname) {` 则剥掉这对括号函数外壳，只留下函数体。两个前缀都没有则原样返回。闸门的 fatal 检查只要求以 `// @bun` 开头，比这里认的头更宽，见 [兼容闸门](verify-node-compat-gate.md)。
+`stripBunWrapper`：若文件以 `// @bun @bytecode @bun-cjs` 开头则删掉这一行；若接下来是 `(function(exports, require, module, __filename, __dirname) {` 则剥掉这对括号函数外壳，只留下函数体。两个前缀都没有则原样返回。闸门的 fatal 检查只要求以 `// @bun` 开头，比这里认的头更宽，见 [兼容闸门](03-verify-node-compat-gate.md)。
 
 然后 `astPatch` 用 acorn 把函数体解析成 `sourceType` 为 `script` 的 AST，按节点改写。当前 `astPatch` 的 stats 字段、`patchFile` 的日志和 README 补丁表都没有 P4。
 
@@ -32,7 +32,7 @@ tags:
 
 ## BunFS 路径改写到 vendor（P3 / P10）
 
-原生 `.node` 与 chart / hljs / mermaid / payload 在 Bun 里是 [BunFS](../glossary.md) 上的绝对路径。写盘之后这些文件会在平台包的 `vendor/` 下，见 [npm 组包](cometix-npm-reassembly.md)。补丁必须让运行中的 cli.js 去打开 `__dirname` 下的那些文件，而不是去打开一个在 Node 文件系统上不存在的 `/$bunfs/root/…`。
+原生 `.node` 与 chart / hljs / mermaid / payload 在 Bun 里是 [BunFS](../../glossary.md) 上的绝对路径。写盘之后这些文件会在平台包的 `vendor/` 下，见 [npm 组包](05-cometix-npm-reassembly.md)。补丁必须让运行中的 cli.js 去打开 `__dirname` 下的那些文件，而不是去打开一个在 Node 文件系统上不存在的 `/$bunfs/root/…`。
 
 P3：若 `require` 的唯一参数是以 `/$bunfs/root/` 开头的字符串，就把该调用换成一段立即执行函数——先用 `require("path").join(__dirname,"vendor",去掉 .node 后的基名, process.arch+"-"+process.platform, 原文件名)` 拼出路径再 `require`，catch 后再 `require` 原来的 `/$bunfs/root/` 路径。P3 的匹配条件就是这个前缀，代码并不再检查是否以 `.node` 结尾。
 
@@ -52,7 +52,7 @@ P7：找到把一个标识符赋给 `*.HttpsProxyAgent` 的赋值，在赋值后
 
 AST 替换写回后，P9 不对节点下手，而是对整份文本 `replaceAll('@anthropic-ai/claude-code','@cometix/claude-code')`。注释写明构建期常量 `PACKAGE_URL` 被内联成 `@anthropic-ai/claude-code`，`claude update` 和自动更新会去装官方包；GitHub 路径用的是 `anthropics/claude-code`，故不会被这次 `replaceAll` 碰到。README 补丁表未列 P9；P9 只出现在 `astPatch` 末尾的 `replaceAll` 与 `patchFile` 日志里。
 
-`astPatch` 返回后 `patchFile` 再用 acorn 解析一次做语法校验。这次解析包在 try/catch 里：失败只打印 Post-patch AST validation FAILED，既不抛错也不中止，产物照样写出去。所以它是一条日志，不是一道闸。随后数 `typeof Bun` 的出现次数：少于 10 就把 `templates/bun-polyfill.js` 插到版权注释块之后，这是 **P6**；不少于 10 则跳过并打印 dual-runtime fallbacks present。脚本会去掉 polyfill 文件开头的 shebang；当前这份模板没有 shebang，这一替换是空操作。闸门用 15 次划分 dual-runtime，P6 用小于 10 决定是否注入，两者没有共用返回值，见 [兼容闸门](verify-node-compat-gate.md)。
+`astPatch` 返回后 `patchFile` 再用 acorn 解析一次做语法校验。这次解析包在 try/catch 里：失败只打印 Post-patch AST validation FAILED，既不抛错也不中止，产物照样写出去。所以它是一条日志，不是一道闸。随后数 `typeof Bun` 的出现次数：少于 10 就把 `templates/bun-polyfill.js` 插到版权注释块之后，这是 **P6**；不少于 10 则跳过并打印 dual-runtime fallbacks present。脚本会去掉 polyfill 文件开头的 shebang；当前这份模板没有 shebang，这一替换是空操作。闸门用 15 次划分 dual-runtime，P6 用小于 10 决定是否注入，两者没有共用返回值，见 [兼容闸门](03-verify-node-compat-gate.md)。
 
 `templates/bun-polyfill.js` 第 3 行注释写它为实现 Claude Code 2.1.200+ 所用的 Bun API。同一文件第 51 行把 `Bun.file` 经 `openSync` 转 fd 写成 matching pre-2.1.200 openSync(...err) behavior。这两处版本只出现在 polyfill 模板注释里。`patchFile` 是否插入这份模板只看 `typeof Bun` 是否少于 10 次，没有按 2.1.200 做版本分支。`scripts/verify-node-compat.mjs` 文件头也不含 `2.1.200+`。
 
@@ -92,7 +92,7 @@ polyfill 还会改写 `require("ws")` 得到的 WebSocket：若选项带 proxy �
 
 ## 相关页面
 
-- [工作链顺序](cometix-restore-pipeline.md)
-- [打补丁前的 Node 兼容闸门](verify-node-compat-gate.md)
-- [组 9 个平台包与主包并发布](cometix-npm-reassembly.md)
-- [acorn 与 JavaScript AST 解析工具](acorn-and-js-ast-parsers.md)
+- [工作链顺序](00-cometix-restore-pipeline.md)
+- [打补丁前的 Node 兼容闸门](03-verify-node-compat-gate.md)
+- [组 9 个平台包与主包并发布](05-cometix-npm-reassembly.md)
+- [acorn 与 JavaScript AST 解析工具](../acorn/acorn-and-js-ast-parsers.md)

@@ -14,11 +14,11 @@ tags:
 
 ## 一句话结论
 
-`scripts/fetch-and-process.mjs` 在某个平台的模块已经写进 [extractDir](../glossary.md)、入口路径 `cliSrc` 已经选定之后，立刻调用 `scripts/verify-node-compat.mjs` 的 `verifyNodeCompat`。此时还没有调用 `patchFile`。三项标了 severity 为 fatal 的检查里只要有一项失败，返回的 [compatible](../glossary.md) 就是假，编排脚本对该平台打印 fatal 项数后 `process.exit(1)`。闸门不读取 [dual-runtime](../glossary.md) / [bun-only](../glossary.md) 这个 mode；要不要注入 polyfill 由后面的 `patchFile` 另数 `typeof Bun`。
+`scripts/fetch-and-process.mjs` 在某个平台的模块已经写进 [extractDir](../../glossary.md)、入口路径 `cliSrc` 已经选定之后，立刻调用 `scripts/verify-node-compat.mjs` 的 `verifyNodeCompat`。此时还没有调用 `patchFile`。三项标了 severity 为 fatal 的检查里只要有一项失败，返回的 [compatible](../../glossary.md) 就是假，编排脚本对该平台打印 fatal 项数后 `process.exit(1)`。闸门不读取 [dual-runtime](../../glossary.md) / [bun-only](../../glossary.md) 这个 mode；要不要注入 polyfill 由后面的 `patchFile` 另数 `typeof Bun`。
 
 ## 输入：何时、对哪份文件
 
-入口定位规则在 [抽出模块并定位 cli.js](bun-sea-extract.md)：若 `extractDir/src/entrypoints/cli.js` 已经在磁盘上就用它，否则用 `extractDir/cli.js`。`verifyNodeCompat` 把整份文件 `readFileSync` 成字符串。路径上没有文件会在这里抛错。
+入口定位规则在 [抽出模块并定位 cli.js](02-bun-sea-extract.md)：若 `extractDir/src/entrypoints/cli.js` 已经在磁盘上就用它，否则用 `extractDir/cli.js`。`verifyNodeCompat` 把整份文件 `readFileSync` 成字符串。路径上没有文件会在这里抛错。
 
 独立 CLI 是 `node scripts/verify-node-compat.mjs <cli.js>`，判定规则与被编排调用时相同。
 
@@ -26,7 +26,7 @@ tags:
 
 `CHECKS` 数组里 severity 为 fatal 的三项：
 
-1. 文件是否以 `// @bun` 开头，并且正文里含有 `(function(exports, require, module, __filename, __dirname)`。这是 [Bun CJS 外壳](../glossary.md) 的结构底线。注意：闸门只要求以 `// @bun` 开头；后面 `stripBunWrapper` 认的是更完整的 `// @bun @bytecode @bun-cjs` 或 CJS 开括号。
+1. 文件是否以 `// @bun` 开头，并且正文里含有 `(function(exports, require, module, __filename, __dirname)`。这是 [Bun CJS 外壳](../../glossary.md) 的结构底线。注意：闸门只要求以 `// @bun` 开头；后面 `stripBunWrapper` 认的是更完整的 `// @bun @bytecode @bun-cjs` 或 CJS 开括号。
 2. 全文里 `require(` 是否至少出现 100 次。
 3. 是否能用正则 `VERSION:"数字.数字.数字"` 抽出版本。
 
@@ -52,11 +52,11 @@ tags:
 
 ## 与 P6 注入的分工
 
-真正决定要不要插 polyfill 的是后面的 `patchFile`：它在剥掉 Bun CJS 外壳并做完 AST 补丁之后再数一次 `typeof Bun`，次数小于 10 就把 `templates/bun-polyfill.js` 插到版权注释之后（日志里叫 [P6](../glossary.md)），次数大于等于 10 就跳过并写 dual-runtime fallbacks present。
+真正决定要不要插 polyfill 的是后面的 `patchFile`：它在剥掉 Bun CJS 外壳并做完 AST 补丁之后再数一次 `typeof Bun`，次数小于 10 就把 `templates/bun-polyfill.js` 插到版权注释之后（日志里叫 [P6](../../glossary.md)），次数大于等于 10 就跳过并写 dual-runtime fallbacks present。
 
 闸门的 15 次阈值只影响 mode 字符串和独立 CLI 的那句提示。`patchFile` 不读取 `verifyNodeCompat` 返回的 mode。守卫次数落在 10 到 14 时，`verify-node-compat.mjs` 标 bun-only，`patchFile` 却跳过 P6。15 与 10 两个阈值在源码里都没有注释说明为什么取这两个数。
 
-P6 的匹配条件、插入位置和 `Bun.*` 实现见 [兼容补丁](node-compat-patches.md)。本页不保存 polyfill 清单。
+P6 的匹配条件、插入位置和 `Bun.*` 实现见 [兼容补丁](04-node-compat-patches.md)。本页不保存 polyfill 清单。
 
 ## 没有这道闸会怎样
 
@@ -85,6 +85,6 @@ P6 的匹配条件、插入位置和 `Bun.*` 实现见 [兼容补丁](node-compa
 
 ## 相关页面
 
-- [工作链顺序](cometix-restore-pipeline.md)
-- [从官方二进制抽出模块并定位 cli.js](bun-sea-extract.md)
-- [把抽出的 cli.js 改成 Node 可执行](node-compat-patches.md)
+- [工作链顺序](00-cometix-restore-pipeline.md)
+- [从官方二进制抽出模块并定位 cli.js](02-bun-sea-extract.md)
+- [把抽出的 cli.js 改成 Node 可执行](04-node-compat-patches.md)

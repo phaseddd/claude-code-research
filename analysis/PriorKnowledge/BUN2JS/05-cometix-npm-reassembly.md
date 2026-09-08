@@ -15,11 +15,11 @@ tags:
 
 ## 一句话结论
 
-补丁完成后，`scripts/fetch-and-process.mjs` 第 5 步对 `OUTPUT_PLATFORMS` 里每一个名字调用 `scripts/build-platform-package.mjs`，第 6 步再调用 `scripts/build-main-package.mjs`。用户只安装主包 `@cometix/claude-code`；npm 按各平台包的 `os` / `cpu` 装上对得上的那一份，[postinstall（Cometix 主包）](../glossary.md) 里的 `install.cjs` 再把平台包的 **cli.js** 和 `vendor/` 拷进主包目录。发布由 `.github/workflows/release.yml` 在手动 `workflow_dispatch` 之后完成。
+补丁完成后，`scripts/fetch-and-process.mjs` 第 5 步对 `OUTPUT_PLATFORMS` 里每一个名字调用 `scripts/build-platform-package.mjs`，第 6 步再调用 `scripts/build-main-package.mjs`。用户只安装主包 `@cometix/claude-code`；npm 按各平台包的 `os` / `cpu` 装上对得上的那一份，[postinstall（Cometix 主包）](../../glossary.md) 里的 `install.cjs` 再把平台包的 **cli.js** 和 `vendor/` 拷进主包目录。发布由 `.github/workflows/release.yml` 在手动 `workflow_dispatch` 之后完成。
 
 ## 九个平台包怎么写出
 
-官方 CDN 清单只有 8 个 SEA 平台：`darwin-arm64`、`darwin-x64`、`linux-arm64`、`linux-x64`、`linux-arm64-musl`、`linux-x64-musl`、`win32-arm64`、`win32-x64`。脚本另外把 `android-arm64` 写成 `PLATFORM_ALIAS`：磁盘内容复用 `linux-arm64` 抽出来并打过补丁的 cli.js 和 extract 目录，包名却是 `@cometix/claude-code-android-arm64`，`package.json` 的 `os` 为 android、`cpu` 为 arm64。这是 [android-arm64 别名](../glossary.md)。用户最终面对的是这 9 个平台包，外加 1 个主包 `@cometix/claude-code`。
+官方 CDN 清单只有 8 个 SEA 平台：`darwin-arm64`、`darwin-x64`、`linux-arm64`、`linux-x64`、`linux-arm64-musl`、`linux-x64-musl`、`win32-arm64`、`win32-x64`。脚本另外把 `android-arm64` 写成 `PLATFORM_ALIAS`：磁盘内容复用 `linux-arm64` 抽出来并打过补丁的 cli.js 和 extract 目录，包名却是 `@cometix/claude-code-android-arm64`，`package.json` 的 `os` 为 android、`cpu` 为 arm64。这是 [android-arm64 别名](../../glossary.md)。用户最终面对的是这 9 个平台包，外加 1 个主包 `@cometix/claude-code`。
 
 每个平台包根上是那份补丁后的 cli.js（`chmod 0o755`）。平台包 `package.json` 带 `os`、`cpu` 数组，告诉 npm 这包只适用于该操作系统和 CPU；本机对不上的 optional 平台包会被跳过。`linux-*-musl` 仍然是 `os=linux` 且 `cpu=arm64` 或 `x64`，没有 `libc` 字段。
 
@@ -27,7 +27,7 @@ tags:
 
 `scripts/node-compat-patch.mjs` 的 P3 把 `require("/$bunfs/root/<模块>.node")` 改成从 `path.join(__dirname, "vendor", 模块名, process.arch+"-"+process.platform, 文件名)` 加载。P10 把那些不是 `.node` 的 `"/$bunfs/root/<文件>"` 字面量改成 `path.join(__dirname, "vendor", "assets", 文件名)`。因此 `vendor` 必须和正在运行的那份 cli.js 同目录。
 
-`vendorDir()` 能从两段式平台键算出「cpu-os」目录名时（例如 `darwin-arm64` 变成 `arm64-darwin`），就把 extract 里找得到的 `audio-capture`、`computer-use-swift`、`computer-use-input`、`image-processor`、`url-handler` 的 `.node` 拷到 `vendor/<模块名>/<cpu>-<os>/`；找不到的模块被空的 catch 跳过。平台键是三段的 [musl](../glossary.md) 时 `vendorDir()` 返回 null，这些 `.node` 不拷；该分支注释写 `musl — no audio-capture`。`android-arm64` 在算 vendor 路径时改传入 `linux-arm64`，所以文件落在 `arm64-linux` 子目录。
+`vendorDir()` 能从两段式平台键算出「cpu-os」目录名时（例如 `darwin-arm64` 变成 `arm64-darwin`），就把 extract 里找得到的 `audio-capture`、`computer-use-swift`、`computer-use-input`、`image-processor`、`url-handler` 的 `.node` 拷到 `vendor/<模块名>/<cpu>-<os>/`；找不到的模块被空的 catch 跳过。平台键是三段的 [musl](../../glossary.md) 时 `vendorDir()` 返回 null，这些 `.node` 不拷；该分支注释写 `musl — no audio-capture`。`android-arm64` 在算 vendor 路径时改传入 `linux-arm64`，所以文件落在 `arm64-linux` 子目录。
 
 `vendor/assets` 不看 `vendorDir`：extract 里除 cli.js 和上述模块的 `.js` / `.node` 以外的普通文件都会拷进去，注释点名 chart / hljs / mermaid，以及 v2.1.229 起才有的 payload.template。ripgrep 来自 GitHub 的 6 套二进制（arm64/x64 乘 darwin/linux/win32），放入 `vendor/ripgrep/<cpu>-<os>/`；musl 没有独立目录时回退到 `arm64-linux` 或 `x64-linux`。seccomp 只在 linux 平台按 arch 放入 `vendor/seccomp/arm64` 或 `x64`。
 
@@ -35,11 +35,11 @@ README 的 Package contents 画出的 vendor 只有 assets、ripgrep（标注 6 
 
 ## 主包占位 cli.js 与 optionalDependencies
 
-主包由 `build-main-package.mjs` 写出。`bin.claude` 指向根目录 cli.js，写出时内容是 `templates/cli-placeholder.js`（[占位 cli.js](../glossary.md)）：它只打印平台包没装上或 postinstall 没跑（例如 `--ignore-scripts`），并 `process.exit(1)`。`scripts.postinstall` 是 `node install.cjs`，正文来自 `templates/install.cjs`。
+主包由 `build-main-package.mjs` 写出。`bin.claude` 指向根目录 cli.js，写出时内容是 `templates/cli-placeholder.js`（[占位 cli.js](../../glossary.md)）：它只打印平台包没装上或 postinstall 没跑（例如 `--ignore-scripts`），并 `process.exit(1)`。`scripts.postinstall` 是 `node install.cjs`，正文来自 `templates/install.cjs`。
 
-[optionalDependencies](../glossary.md) 列出 9 个 `@cometix/claude-code-<平台>` 的同一版本，以及一组 `@img/sharp-*`。npm 允许列在这里的依赖安装失败也不让整包失败；缺某一个平台包时主包仍能装上，再由 `install.cjs` 决定能不能把 cli.js 拷过来。
+[optionalDependencies](../../glossary.md) 列出 9 个 `@cometix/claude-code-<平台>` 的同一版本，以及一组 `@img/sharp-*`。npm 允许列在这里的依赖安装失败也不让整包失败；缺某一个平台包时主包仍能装上，再由 `install.cjs` 决定能不能把 cli.js 拷过来。
 
-`files` 数组包含 `cli.js`、`install.cjs`、`bun-ink-compat.cjs`、`sdk-tools.d.ts`。`bun-ink-compat.cjs` 从 templates 拷入主包，因为 `templates/bun-polyfill.js` 里是 `require("./bun-ink-compat.cjs")`，运行时的 cli.js 在主包目录。`sdk-tools.d.ts`、`LICENSE.md`、`README.md` 从 npm pack 下来的官方 `@anthropic-ai/claude-code` wrapper 目录拷来，官方主包的 JS 不当入口，见 [官方 Bun SEA 交付](claude-code-bun-sea-shipping.md)。主包还把 ws、yaml、undici、semver、node-pty 写进普通 `dependencies`，`engines.node` 为 `>=22.0.0`。
+`files` 数组包含 `cli.js`、`install.cjs`、`bun-ink-compat.cjs`、`sdk-tools.d.ts`。`bun-ink-compat.cjs` 从 templates 拷入主包，因为 `templates/bun-polyfill.js` 里是 `require("./bun-ink-compat.cjs")`，运行时的 cli.js 在主包目录。`sdk-tools.d.ts`、`LICENSE.md`、`README.md` 从 npm pack 下来的官方 `@anthropic-ai/claude-code` wrapper 目录拷来，官方主包的 JS 不当入口，见 [官方 Bun SEA 交付](01-claude-code-bun-sea-shipping.md)。主包还把 ws、yaml、undici、semver、node-pty 写进普通 `dependencies`，`engines.node` 为 `>=22.0.0`。
 
 ## postinstall 拷贝与 musl / android 选择
 
@@ -93,6 +93,6 @@ publish 作业先按 tarball 发平台包再发主包，registry 上已有该版
 
 ## 相关页面
 
-- [工作链顺序](cometix-restore-pipeline.md)
-- [官方 Claude Code 的 Bun SEA 交付](claude-code-bun-sea-shipping.md)
-- [把抽出的 cli.js 改成 Node 可执行](node-compat-patches.md)
+- [工作链顺序](00-cometix-restore-pipeline.md)
+- [官方 Claude Code 的 Bun SEA 交付](01-claude-code-bun-sea-shipping.md)
+- [把抽出的 cli.js 改成 Node 可执行](04-node-compat-patches.md)
