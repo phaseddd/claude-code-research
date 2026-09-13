@@ -51,6 +51,7 @@
 - **single-CJS** —— 官方 Claude Code v2.1.241 及更早的内嵌形态：Bun SEA 里是一份约 28 MB、带 Bun CJS 外壳的 CommonJS 大包，还原时作为一份 `cli.js` 打补丁。与下面的 split-ESM 成对使用，别写成「旧版布局」。
 - **split-ESM** —— 官方 Claude Code v2.1.242 及之后的内嵌形态：一份约 20 KB 的 ESM 入口，加上一千多个互相 import 的分块模块。`scripts/fetch-and-process.mjs` 的常量 `FIRST_SPLIT_ESM_VERSION` 写死 `2.1.242` 作为分界，用 `semver.gte` 判定，不嗅探文件内容。
 - **分块（chunk）** —— split-ESM 产物里的 `chunk-<八位随机串>.js`。它们是上游代码分割的产物，不是 npm 包，也不是 Bun 专有格式。数量随上游调整而反复变化（实测 562 到 1789 之间）。
+- **魔数（magic number / 魔术字节 / 文件签名）** —— 放在文件开头固定偏移上、用来标明自己是什么格式的一串固定字节。文件名后缀谁都能改，不可信；魔数是格式规范钦定的，所以读头几个字节就能判定格式，成本恒定、不必扫全文。本库出现三处：可执行格式（Mach-O 的 `0xFEEDFACF`、PE 的 `0x5A4D` 即 ASCII `MZ`、ELF 的 `0x7F454C46` 即 `\x7F` 加 `ELF`）、zstd 帧的 `28 B5 2F FD`、以及 `readMagic` 只读四字节的优化。**注意同名的第二个含义**：代码评审语境里 magic number 指「代码里没有解释的字面常量」，是贬义（例如闸门里未加注释的 15 与 10 两个阈值）。前者是必需的设计，其「无来由」查规范就有答案；后者是坏味道，其「无来由」是作者没写清楚。本库写「魔数」时一律指前者，指后者时写「未加注释的阈值 / 字面常量」。
 - **BUNFS_ROOTS（BunFS 双根）** —— `scripts/bun-sea-extract.mjs` 导出的常量，值是 `/$bunfs/root/` 与 `B:/~BUN/root/` 两个前缀。POSIX 构建用前者、PE 构建用后者；只认一个的改写器会把每一条 win32 路径原样留下。
 - **E1–E5** —— `scripts/esm-chunk-patch.mjs` 对 split-ESM 做的五类改写：E1 import 指示符改相对路径、E2 运行期路径改相对路径、E3 `import.meta.require` 换成 `createRequire` 包装、E4 polyfill 落成 `bun-polyfill.mjs` 并由入口首先 import、E5 顶层分块 `require` 提升成裸 `import`。与作用于 AST 节点的 P1–P10 是两套编号，别混。
 - **补丁落点（patch site）** —— `scripts/patch-sites.mjs` 里登记的一条「某补丁要改的 AST 形状」。标 `required` 的落点在扫描中消失会让构建失败，标 `optional` 的不会。一个落点可以命中多个文件。
