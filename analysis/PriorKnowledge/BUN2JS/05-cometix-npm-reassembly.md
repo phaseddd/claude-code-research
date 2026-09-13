@@ -2,7 +2,7 @@
 title: 组 9 个平台包与主包并发布
 kind: mechanism
 status: draft
-updated: 2026-09-07
+updated: 2026-09-13
 applies_to: "CometixSpace/claude-code master@c286ad1（changelog: sync v2.1.240）；已发布 @cometix/claude-code 2.1.241；官方 Bun SEA 自 v2.1.113 起"
 tags:
   - topic:claude-code
@@ -32,6 +32,41 @@ tags:
 `vendor/assets` 不看 `vendorDir`：extract 里除 cli.js 和上述模块的 `.js` / `.node` 以外的普通文件都会拷进去，注释点名 chart / hljs / mermaid，以及 v2.1.229 起才有的 payload.template。ripgrep 来自 GitHub 的 6 套二进制（arm64/x64 乘 darwin/linux/win32），放入 `vendor/ripgrep/<cpu>-<os>/`；musl 没有独立目录时回退到 `arm64-linux` 或 `x64-linux`。seccomp 只在 linux 平台按 arch 放入 `vendor/seccomp/arm64` 或 `x64`。
 
 README 的 Package contents 画出的 vendor 只有 assets、ripgrep（标注 6 platforms）、audio-capture（标注 6 platforms）、seccomp。脚本还会尝试拷 computer-use-swift、computer-use-input、image-processor、url-handler。本仓库已落下的 `artifacts/2.1.241` 是 win32-x64 安装树：postinstall 之后主包 vendor 里有 assets（含 `payload.template.html.asset`）、`audio-capture/x64-win32`、`image-processor/x64-win32`、`ripgrep/x64-win32`，没有 seccomp。
+
+### ripgrep 与 seccomp 都是尽力而为
+
+这两样不是官方二进制里抽出来的，是第 4 步另外去拉的，失败也不会让构建停下。
+
+`downloadRipgrep` 对六个 `<cpu>-<os>` 键逐个下载解包，每个包在自己的 try/catch 里；失败只打印一行 `⚠ <键>: …`。函数末尾是 `return downloaded > 0 ? ripgrepDir : null`——只要有一个成功就返回目录，六个全失败才返回 null。`buildPlatformPackage` 拿到目录后对本平台那份 `stat` 不到时也只打印 `[!] vendor/ripgrep/<键>/ — not found`。所以「某个平台包发出去时没带 rg」这件事只体现为构建日志里的一行，不会失败。
+
+六个键里 Linux 两条用的不是同一种 libc 目标：`arm64-linux` 取 `aarch64-unknown-linux-gnu`，`x64-linux` 取 `x86_64-unknown-linux-musl`。musl 平台键没有独立目录时回退到 `arm64-linux` / `x64-linux`，因此 `linux-x64-musl` 包拿到的恰好是静态链接那份，而 `linux-arm64-musl` 包拿到的是 gnu 那份。源码没有注释说明为什么两条 Linux 取不同目标。
+
+`downloadSeccomp` 先 `npm pack @anthropic-ai/sandbox-runtime`，再按两条路径各试一次解包：`*/vendor/seccomp/*` 对应 sandbox-runtime v0.0.58+，`*/dist/vendor/seccomp/*` 对应 v0.0.57（注释写明这两个版本号）。两条都取不到就 `return null`，此后 `seccompArch(platform) && seccompDir` 不成立，linux 平台包静默地不带 seccomp。
+
+`tarExtract` 解包时先不带 `--wildcards` 调 tar，失败再带一次；注释写明 macOS 的 BSD tar 不需要这个参数、Linux 的 GNU tar 需要。
+
+### rg 版本探测在当前代码里不可能成功
+
+`DEFAULT_RG_VERSION` 是写死的 `'15.1.0'`。`fetchAndProcess` 本意是从官方二进制里问出真实的 rg 版本再去 GitHub 下对应版本：
+
+```js
+// 第 3 步循环内，每个平台处理完
+await rm(binPath, { force: true });
+// ...循环结束之后
+const currentKey = `${process.platform}-${process.arch}`;
+if (extractions[currentKey]?.binPath) {
+  const detected = await detectRgVersion(extractions[currentKey].binPath);
+  if (detected) { rgVersion = detected; ... }
+}
+```
+
+`detectRgVersion` 的做法是把那个二进制 symlink 成名为 `rg` 的文件再执行 `--version`（Bun 打出来的是 multicall 二进制，按 argv[0] 分派）。但第 3 步循环末尾已经 `rm` 掉了每一份二进制，而探测在循环**之后**才跑，拿的是同一条已删除的路径。`detectRgVersion` 整个包在 try/catch 里、失败返回 null，所以既不报错也不打印，`rgVersion` 就一直是 `15.1.0`。
+
+CI 跑在 ubuntu-latest 上，`currentKey` 算出 `linux-x64`，这一键确实在 `extractions` 里，所以条件成立、探测照样发起，只是必然落进 catch。这一段顺序在 `3186ed0`（split-package 架构那次重构）就已经是这样，`detectRgVersion` 本身来自初始提交。
+
+### 平台包的 files 字段没有参与发布
+
+平台包 `package.json` 写着 `files: ['cli.js', 'vendor/']`，但发布链不走 `npm pack`：CI 用 `tar czf` 把目录包成顶层目录名为 `package` 的 tarball，再 `npm publish <tgz>` 直接发这个 tarball。npm 不会对已经打好的 tarball 再按 `files` 过滤，所以这个字段从头到尾是装饰。在单文件布局下它恰好与实际内容一致，所以无害。
 
 ## 主包占位 cli.js 与 optionalDependencies
 
@@ -88,11 +123,16 @@ publish 作业先按 tarball 发平台包再发主包，registry 上已有该版
 - `artifacts/2.1.241` 的 win32-x64 安装树：主包 `package.json` 与 `vendor/` 实况。
 - `artifacts/2.1.229` 的 `vendor/assets` 含 `payload.template.html.asset`。
 - `git log -S cron -- .github/workflows/release.yml` 与 `git show 0bf75e5`：定时触发器的加删过程，以及被删的那两行。
+- `scripts/fetch-and-process.mjs`：`DEFAULT_RG_VERSION`、`tarExtract` 的 `--wildcards` 回退、`rgPlatformMap` 六个键的归档名、`downloadRipgrep` 的 `downloaded > 0` 返回、`downloadSeccomp` 的两条解包路径与 v0.0.58+ / v0.0.57 注释、第 3 步循环末尾的 `rm(binPath)` 与循环之后的 `detectRgVersion`。
+- `git show c286ad1:scripts/fetch-and-process.mjs`：上列各项在 c286ad1 树内已是现状，不是后来才引入的。
+- `git log -S"rm(binPath" -- scripts/fetch-and-process.mjs`（得到 `3186ed0`）与 `git log -S detectRgVersion`（得到初始提交 `332fd47`）：两段代码的引入时间。
+- `.github/workflows/release.yml` 的 Package tarballs 与 publish 步骤：用 `tar czf` 打包、`npm publish <tgz>` 直接发 tarball。
 
-**未确认：** 未在本机对 android 或 musl 实装以核对 `detectMusl` / `os=android` 的 npm 选型。cron 的加删过程已从本地 git 历史核实，但该仓库 GitHub 上的 Actions 运行记录本轮没有查，因此「现在实际靠人手动触发」这一步仍是从 YAML 推的，不是从运行历史看到的。
+**未确认：** 未在本机对 android 或 musl 实装以核对 `detectMusl` / `os=android` 的 npm 选型。cron 的加删过程已从本地 git 历史核实，但该仓库 GitHub 上的 Actions 运行记录本轮没有查，因此「现在实际靠人手动触发」这一步仍是从 YAML 推的，不是从运行历史看到的。「rg 版本探测必然落进 catch」是从「二进制已删 + 探测在循环之后 + 整段包 try/catch」推出的，没有实跑一次构建去看日志里有没有那行 `rg version:`；也没有核对 `15.1.0` 与官方二进制内嵌的 rg 版本是否恰好相同（若相同，这段失效不会产生可观察后果）。两条 Linux 取不同 libc 目标的动机源码未写，本页不补。
 
 ## 相关页面
 
 - [工作链顺序](00-cometix-restore-pipeline.md)
 - [官方 Claude Code 的 Bun SEA 交付](01-claude-code-bun-sea-shipping.md)
 - [把抽出的 cli.js 改成 Node 可执行](04-node-compat-patches.md)
+- [SPLIT-ESM/05：2.1.242 起的包布局与发布作业](../SPLIT-ESM/05-split-package-layout-and-release.md)

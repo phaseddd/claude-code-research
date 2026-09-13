@@ -2,7 +2,7 @@
 title: 把抽出的 cli.js 改成 Node 可执行
 kind: mechanism
 status: draft
-updated: 2026-09-07
+updated: 2026-09-13
 applies_to: "CometixSpace/claude-code master@c286ad1（changelog: sync v2.1.240）；已发布 @cometix/claude-code 2.1.241；官方 Bun SEA 自 v2.1.113 起"
 tags:
   - topic:claude-code
@@ -60,6 +60,15 @@ P6 只在 `globalThis.Bun` 尚未定义时挂上 file、spawn、hash、deepEqual
 
 polyfill 还会改写 `require("ws")` 得到的 WebSocket：若选项带 proxy 且没有 agent，就用 P7 挂上的 `globalThis.__HttpsProxyAgent` 造 agent。stripANSI / stringWidth / wrapAnsi 优先 `require("./bun-ink-compat.cjs")`，也就是 `templates/bun-ink-compat.cjs` 这份由 `scripts/build-main-package.mjs` 拷进主包的实现；require 失败则退回正则去 ANSI、按去 ANSI 后的 length 估宽度。
 
+### 为什么 stringWidth 要单独有一份实现
+
+`templates/bun-ink-compat.cjs` 是一份 53 KB 的 esbuild 产物，仓库里只有编译结果、没有源码目录。它的两次提交交代了来历与代价：
+
+- `da364ca`（2026-05-07）把 Anthropic 的 ink 相关实现连依赖一起编译进来，提交正文写明目标是「与 Bun 原生 API 行为完全一致」，并记了验证对象 v2.1.132 darwin-x64 的完整初始化链通过。
+- `fac08ee`（2026-05-16）只改 stringWidth，正文写明做法是拿 108224 个码位逐个对着 Bun 1.3.14 的 `stringWidth` 扫一遍，得出 294 个单码位需要覆写（Bun 判 1 而 JS 判 2，多为杂项符号与 emoji），另外把文本呈现变体选择符 U+FE0E 强制成宽度 1；结果是整个基本多文种平面加补充平面上零差异。它修的是 issue #6——状态指示器闪烁与字符重复。
+
+这解释了那句「优先 require、失败才退回正则估宽」的分量：退回路径按去掉 ANSI 之后的 `length` 估宽度，对宽字符和 emoji 会算错，而终端 UI 靠宽度做原地重绘，算错就表现为闪烁或重复字符。也就是说 `bun-ink-compat.cjs` 不是可选优化，缺了它 TUI 会有可见缺陷；正则回退只保证不崩。
+
 `Bun.which` 在命令为 `rg` 时还会按 `USE_BUILTIN_RIPGREP` 去 `vendor/ripgrep/<arch>-<platform>/` 找捆绑的 rg。注释写明抽出到 Node 之后 `Bun.isStandaloneExecutable` 为假，SEA 里那条内置 rg 分支不会再走。
 
 ## shebang 与 CI 校验的分工
@@ -83,12 +92,13 @@ polyfill 还会改写 `require("ws")` 得到的 WebSocket：若选项带 proxy �
 
 - `scripts/node-compat-patch.mjs`：`stripBunWrapper`、`astPatch`、`patchFile`、P1–P3 / P5 / P7–P10 的匹配条件与生成代码、P9 的 `replaceAll`、P6 的小于 10 次阈值、`addShebangHeader`。
 - `templates/bun-polyfill.js`：第 3 行 `Claude Code 2.1.200+`、第 51 行 `pre-2.1.200`；以及 `isStandaloneExecutable`、`JSONL.parseChunk`、`SQL`、`Bun.which` 对 rg 的 vendor 查找、ws 的 proxy → agent。
-- `templates/bun-ink-compat.cjs`：主包里与 polyfill 相对路径对应的实现。
+- `templates/bun-ink-compat.cjs`：主包里与 polyfill 相对路径对应的实现；53781 字节的 esbuild 产物，仓库内无对应源码目录。
+- `git log -- templates/bun-ink-compat.cjs`：`da364ca`（编译来源与 v2.1.132 验证）与 `fac08ee`（108224 码位对照、294 个覆写、U+FE0E、修 issue #6）的提交正文。
 - `scripts/fetch-and-process.mjs`：闸门通过后调用 `patchFile`。
 - `README.md` 补丁表：列了 P1–P3、P5–P8、P10，未列 P9。
 - `.github/workflows/release.yml`：`node cli.js --version`，不依赖 shebang。
 
-**未确认：** 工作区没有抽出态 cli.js，未对真实抽出的文件执行 `patchFile`，命中次数未实测。P3/P10 只匹配 `/$bunfs/root/` 前缀。10 到 14 次 `typeof Bun` 没有样本。当前代码没有 P4；不能把 split-package 当作已证实的删除原因。`templates/bun-polyfill.js` 第 3 行与第 51 行的 2.1.200 只是注释，本轮未对着 2.1.200 前后的抽出文件核对 polyfill 覆盖面。
+**未确认：** `bun-ink-compat.cjs` 的两条提交正文（294 个覆写、零差异、修 issue #6）未自行复算，也没有在本机对比过带它与不带它的 TUI 表现；「缺它会有可见缺陷」是从「回退路径按去 ANSI 后的 length 估宽」与 issue 标题推的。工作区没有抽出态 cli.js，未对真实抽出的文件执行 `patchFile`，命中次数未实测。P3/P10 只匹配 `/$bunfs/root/` 前缀。10 到 14 次 `typeof Bun` 没有样本。当前代码没有 P4；不能把 split-package 当作已证实的删除原因。`templates/bun-polyfill.js` 第 3 行与第 51 行的 2.1.200 只是注释，本轮未对着 2.1.200 前后的抽出文件核对 polyfill 覆盖面。
 
 ## 相关页面
 
@@ -96,3 +106,4 @@ polyfill 还会改写 `require("ws")` 得到的 WebSocket：若选项带 proxy �
 - [打补丁前的 Node 兼容闸门](03-verify-node-compat-gate.md)
 - [组 9 个平台包与主包并发布](05-cometix-npm-reassembly.md)
 - [acorn 与 JavaScript AST 解析工具](../acorn/acorn-and-js-ast-parsers.md)
+- [SPLIT-ESM/01：2.1.242 起 P1–P10 如何在分块上复用](../SPLIT-ESM/01-esm-chunk-rewrites.md)

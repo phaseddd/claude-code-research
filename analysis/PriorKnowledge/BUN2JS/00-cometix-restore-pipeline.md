@@ -2,7 +2,7 @@
 title: Cometix 把官方 Bun SEA 还原成 Node npm 包的工作链
 kind: concept
 status: draft
-updated: 2026-09-07
+updated: 2026-09-13
 applies_to: "CometixSpace/claude-code master@c286ad1（changelog: sync v2.1.240）；已发布 @cometix/claude-code 2.1.241；官方 Bun SEA 自 v2.1.113 起"
 tags:
   - topic:claude-code
@@ -16,6 +16,8 @@ tags:
 ## 一句话解释
 
 Cometix 仓库用 `scripts/fetch-and-process.mjs` 导出的 `fetchAndProcess`，把某一版官方 Claude Code 还原成可在 Node 下安装的 npm 包。编排顺序是：读 [CDN 清单（manifest.json）](../../glossary.md) → 按八个 [平台键](../../glossary.md) 下载 [Bun SEA](../../glossary.md) 二进制 → 抽出模块并定位 **cli.js** → 过兼容闸门 → 打补丁 → 组九个平台包加一个主包。`.github/workflows/release.yml` 在 Build all packages 步骤调用这份脚本，随后再做校验、打 tarball、发布。本页只记录这段顺序，以及各环交接的目录与变量名。
+
+> **适用边界。** 本组六页描述的是官方 v2.1.241 及更早那种「内嵌一份 CommonJS 大包」的形态，对应 Cometix 仓库 `c286ad1` 时的管线。官方在 v2.1.242 把内嵌形态换成一份 ESM 入口加上千个分块模块，`fetchAndProcess` 从第 3 步起分叉成两条管线，本组页面描述的那条只在 `splitEsm === false` 时走。新那条见 [SPLIT-ESM](../SPLIT-ESM/00-split-esm-turning-point.md)。第 1、2、4、7 步和 `install.cjs` 的平台选择两条管线共用，本组仍然适用。
 
 ## 工作链顺序
 
@@ -44,7 +46,7 @@ Cometix 仓库用 `scripts/fetch-and-process.mjs` 导出的 `fetchAndProcess`，
 
 ## 编排入口与产物交接
 
-- 入口脚本是 `scripts/fetch-and-process.mjs`。命令行要 `--version` 或 `--latest`。`--latest` 会执行 `npm view @anthropic-ai/claude-code version`，把读到的版本号再交给 `fetchAndProcess`。
+- 入口脚本是 `scripts/fetch-and-process.mjs`。命令行要 `--version` 或 `--latest`。`--latest` 会执行 `npm view @anthropic-ai/claude-code version`，把读到的版本号再交给 `fetchAndProcess`。仓库 `package.json` 的 `scripts` 里另有 `"assemble": "node scripts/assemble-package.mjs"`，但 `scripts/assemble-package.mjs` 在整个 git 历史里从未存在过——`npm run assemble` 是一条悬空脚本，组包实际由第 5、6 步的 `build-platform-package.mjs` 与 `build-main-package.mjs` 完成。
 - 运行中的临时根是 `outputDir/.tmp/`（变量 `tmpDir`）。第 7 步整棵删除，所以闸门、补丁、抽出目录都不会留到发布产物里。
 - 各环用到的目录与变量：
   - `CDN_BASE`：`https://downloads.claude.ai/claude-code-releases`
@@ -75,6 +77,7 @@ Cometix 仓库用 `scripts/fetch-and-process.mjs` 导出的 `fetchAndProcess`，
 
 - `scripts/fetch-and-process.mjs`：`fetchAndProcess` 第 1–7 步；常量 `CDN_BASE` / `SEA_PLATFORMS` / `OUTPUT_PLATFORMS` / `PLATFORM_ALIAS`；变量 `tmpDir` / `extractDir` / `legacyCli` / `cliSrc` / `patchedPath` / `extractions` / `wrapperDir`；CLI 分支 `--version` / `--latest` / `--platforms`。
 - `.github/workflows/release.yml`：check 作业调用 `check-new-versions.mjs` 的条件，Build all packages 步骤对 `fetch-and-process.mjs` 的调用形式，以及其后的 Verify / Package / publish。
+- `package.json` 的 `scripts` 字段，以及 `git log --oneline --all -- scripts/assemble-package.mjs`（无输出）：`assemble` 指向的文件从未被提交过。
 - 各环内部细节的出处记在对应专页的「证据与复核」或「依据」节。
 
 **未确认：** 本轮没有实跑 `fetchAndProcess`，顺序与交接物取自源码阅读，不是一次构建的日志。`--platforms` 过滤下 `activeSEA` / `activeOut` 的裁剪路径未实测。
@@ -86,3 +89,4 @@ Cometix 仓库用 `scripts/fetch-and-process.mjs` 导出的 `fetchAndProcess`，
 - [打补丁前的 Node 兼容闸门](03-verify-node-compat-gate.md)
 - [把抽出的 cli.js 改成 Node 可执行](04-node-compat-patches.md)
 - [组 9 个平台包与主包并发布](05-cometix-npm-reassembly.md)
+- [SPLIT-ESM：2.1.242 起的另一条管线](../SPLIT-ESM/00-split-esm-turning-point.md)

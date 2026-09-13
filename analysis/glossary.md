@@ -12,6 +12,7 @@
 - `topic:slash-command` —— Claude Code 斜杠命令（`/…`）子系统：命令对象、分发与 builtin/prompt/local 等形态。
 - `topic:insights` —— Claude Code `/insights` 使用报告能力（会话扫描、usage-data、内嵌提示词与 HTML 报告）。
 - `topic:bun-sea` —— Bun SEA（Single Executable Application）单文件可执行分发形态与其内嵌模块提取这一主题域。
+- `topic:split-esm` —— 官方 Claude Code 自 v2.1.242 起的分块 ESM 内嵌形态，及其还原管线这一主题域。
 - `topic:npm` —— npm 包的分发 / 分包 / 安装机制这一主题域。
 - `topic:deepseek` —— DeepSeek（模型 / API / Anthropic 兼容端点）这一主题域。
 
@@ -47,6 +48,15 @@
 - **占位 cli.js** —— `templates/cli-placeholder.js` 在 postinstall 成功拷贝之前充当主包 `bin.claude` 的目标文件。它只说明平台包没装上或脚本被 `--ignore-scripts` 跳过，然后以状态码 1 退出。
 - **android-arm64 别名** —— 官方 SEA 没有 android 二进制。`scripts/fetch-and-process.mjs` 的 `PLATFORM_ALIAS` 让名为 `android-arm64` 的包复用 `linux-arm64` 的抽出和补丁产物，但 `package.json` 的 `os` 写成 android，好让 Android 上的 npm 愿意安装。
 - **musl** —— `SEA_PLATFORMS` 里的 `linux-arm64-musl` 与 `linux-x64-musl` 两个键。`scripts/fetch-and-process.mjs` 把它们和另外六个键同样处理：清单里有对应条目就按 `binary` 字段各下一份，缺键就 skip。`build-platform-package.mjs` 对三段式平台键让 `vendorDir` 返回 null 从而不拷 NAPI 的 `.node`；`install.cjs` 用进程报告里有没有 `glibcVersionRuntime` 来选择 `linux-*-musl` 包。
+- **single-CJS** —— 官方 Claude Code v2.1.241 及更早的内嵌形态：Bun SEA 里是一份约 28 MB、带 Bun CJS 外壳的 CommonJS 大包，还原时作为一份 `cli.js` 打补丁。与下面的 split-ESM 成对使用，别写成「旧版布局」。
+- **split-ESM** —— 官方 Claude Code v2.1.242 及之后的内嵌形态：一份约 20 KB 的 ESM 入口，加上一千多个互相 import 的分块模块。`scripts/fetch-and-process.mjs` 的常量 `FIRST_SPLIT_ESM_VERSION` 写死 `2.1.242` 作为分界，用 `semver.gte` 判定，不嗅探文件内容。
+- **分块（chunk）** —— split-ESM 产物里的 `chunk-<八位随机串>.js`。它们是上游代码分割的产物，不是 npm 包，也不是 Bun 专有格式。数量随上游调整而反复变化（实测 562 到 1789 之间）。
+- **BUNFS_ROOTS（BunFS 双根）** —— `scripts/bun-sea-extract.mjs` 导出的常量，值是 `/$bunfs/root/` 与 `B:/~BUN/root/` 两个前缀。POSIX 构建用前者、PE 构建用后者；只认一个的改写器会把每一条 win32 路径原样留下。
+- **E1–E5** —— `scripts/esm-chunk-patch.mjs` 对 split-ESM 做的五类改写：E1 import 指示符改相对路径、E2 运行期路径改相对路径、E3 `import.meta.require` 换成 `createRequire` 包装、E4 polyfill 落成 `bun-polyfill.mjs` 并由入口首先 import、E5 顶层分块 `require` 提升成裸 `import`。与作用于 AST 节点的 P1–P10 是两套编号，别混。
+- **补丁落点（patch site）** —— `scripts/patch-sites.mjs` 里登记的一条「某补丁要改的 AST 形状」。标 `required` 的落点在扫描中消失会让构建失败，标 `optional` 的不会。一个落点可以命中多个文件。
+- **标记串（marker）** —— 落点登记表里那个廉价子串（如 `_cc_bin`、`.min.js"`），只决定「这个文件值不值得解析 AST」，不是判定条件。标记串还在而共用它的落点全部失配，就是「构造换了形状」的信号。
+- **惰性替身（lazy stand-in）** —— `require` 成环时先交出去的 Proxy，首次被访问才去解析真正的导出，按「模块 + 属性」缓存。原始值不能用它顶替（Proxy 当不了原始值），只服务对象与函数型导出。
+- **zstd 帧** —— 以 `28 B5 2F FD` 四字节开头的压缩数据。官方自 v2.1.251 起把内嵌文本资产压成这种形式，其加载器嗅魔数而不看扩展名，所以按后缀筛会漏。
 - **slash command（斜杠命令）** —— 用户以 `/` 开头触发的 CLI 内建或扩展命令；本库写「斜杠命令」，标签用 `topic:slash-command`。
 - **/insights** —— Claude Code builtin 斜杠命令：本机扫历史会话与缓存，经内部模型调用生成 usage 报告 HTML；细节见 mechanisms / concepts 下 insights 相关页。
 - **usage-data** —— Claude 配置根下存放 `/insights` 产物与缓存的目录名（含 `session-meta/`、`facets/`、`report*.html`）。
